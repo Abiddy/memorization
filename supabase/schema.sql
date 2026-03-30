@@ -5,6 +5,7 @@ create extension if not exists "pgcrypto";
 create table if not exists public.members (
   id uuid primary key default gen_random_uuid(),
   display_name text not null,
+  memorized_surah_ids int[] not null default '{}',
   created_at timestamptz not null default now(),
   constraint display_name_nonempty check (char_length(trim(display_name)) > 0)
 );
@@ -36,10 +37,12 @@ create index if not exists progress_events_member_idx on public.progress_events 
 
 create table if not exists public.member_progress (
   member_id uuid primary key references public.members (id) on delete cascade,
-  activity text not null check (activity in ('memorizing', 'revising')),
-  active_juz int not null check (active_juz >= 1 and active_juz <= 30),
-  surahs_selected int[] not null default '{}',
-  pct_active_juz numeric(6, 1) not null,
+  memorizing_juz int check (memorizing_juz is null or (memorizing_juz >= 1 and memorizing_juz <= 30)),
+  memorizing_surah int check (memorizing_surah is null or (memorizing_surah >= 1 and memorizing_surah <= 114)),
+  memorizing_pct_active_juz numeric(6, 1),
+  revising_juz int check (revising_juz is null or (revising_juz >= 1 and revising_juz <= 30)),
+  revising_surahs int[] not null default '{}',
+  revising_pct_active_juz numeric(6, 1),
   updated_at timestamptz not null default now()
 );
 

@@ -27,17 +27,18 @@ type MessageRow = {
 type DashboardRow = {
   member_id: string;
   display_name: string;
-  activity: "memorizing" | "revising" | null;
+  revising: string;
+  memorising: string;
   active_juz: number | null;
   pct_active_juz: number | null;
-  max_juz_completed: number;
+  surah_memorising: string;
+  pct_quran: number;
 };
 
 type ProgressReport = {
-  leaderboard: { member_id: string; display_name: string; max_juz: number }[];
-  focus: { member_id: string; display_name: string; juz: number; event_kind: "memorizing" | "revising" }[];
-  clubSeries: { date: string; clubMaxJuz: number }[];
-  projection: { date: string; clubMaxJuz: number; projected: true }[];
+  leaderboard: { member_id: string; display_name: string; pct_quran: number }[];
+  clubSeries: { date: string; clubPct: number }[];
+  projection: { date: string; clubPct: number; projected: true }[];
   dashboard: DashboardRow[];
 };
 
@@ -300,10 +301,11 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   const loadProgress = useCallback(async () => {
     const res = await fetch("/api/progress");
     if (!res.ok) return;
-    const data = (await res.json()) as ProgressReport;
+    const data = (await res.json()) as Partial<ProgressReport>;
     setProgress({
-      ...data,
-      focus: data.focus ?? [],
+      leaderboard: data.leaderboard ?? [],
+      clubSeries: data.clubSeries ?? [],
+      projection: data.projection ?? [],
       dashboard: data.dashboard ?? [],
     });
   }, []);
@@ -367,6 +369,13 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           void loadMembers();
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "members" },
+        () => {
+          void loadProgress();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -384,11 +393,11 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     if (!progress) return [];
     const map = new Map<string, { date: string; recorded?: number; forecast?: number }>();
     for (const p of progress.clubSeries) {
-      map.set(p.date, { date: p.date, recorded: p.clubMaxJuz });
+      map.set(p.date, { date: p.date, recorded: p.clubPct });
     }
     for (const p of progress.projection) {
       const existing = map.get(p.date) ?? { date: p.date };
-      existing.forecast = p.clubMaxJuz;
+      existing.forecast = p.clubPct;
       map.set(p.date, existing);
     }
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -570,20 +579,6 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
         <div className="flex min-h-0 flex-1 flex-col">
           {panel === "chat" ? (
             <>
-              <div className="shrink-0 border-b border-zinc-100 px-5 py-3 dark:border-zinc-800">
-                <StructuredProgressPicker
-                  onPosted={() => {
-                    void loadMessages();
-                    void loadProgress();
-                    setSendHint("Progress posted — it appears in chat and Current focus.");
-                  }}
-                  onError={(msg) => setSendError(msg)}
-                />
-                <p className="mt-2 text-left text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  Use <span className="font-medium text-zinc-600 dark:text-zinc-300">I am…</span> to log memorising or revising
-                  (juz + surahs). Chat is for everything else.
-                </p>
-              </div>
               <div
                 ref={listRef}
                 className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white dark:bg-zinc-950"
@@ -614,8 +609,20 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 ) : null}
                 <form
                   onSubmit={(e) => void sendMessage(e)}
-                  className="flex flex-row items-center gap-2 rounded-2xl border border-zinc-200 bg-zinc-50/80 py-1.5 pl-3 pr-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
+                  className="flex flex-row items-center gap-1.5 rounded-2xl border border-zinc-200 bg-zinc-50/80 py-1.5 pl-2 pr-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
                 >
+                  <StructuredProgressPicker
+                    onPosted={() => {
+                      void loadMessages();
+                      void loadProgress();
+                      setSendHint("Progress posted — it appears in chat and Current focus.");
+                    }}
+                    onError={(msg) => setSendError(msg)}
+                  />
+                  <div
+                    className="hidden h-6 w-px shrink-0 bg-zinc-200 sm:block dark:bg-zinc-600"
+                    aria-hidden
+                  />
                   <label className="sr-only" htmlFor="club-message-input">
                     Message
                   </label>
@@ -626,7 +633,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                     onChange={(e) => setDraft(e.target.value)}
                     maxLength={4000}
                     placeholder="Write a message…"
-                    className="min-h-10 min-w-0 flex-1 border-0 bg-transparent py-2 text-sm leading-normal text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                    className="min-h-10 min-w-0 flex-1 border-0 bg-transparent py-2 pl-0.5 text-sm leading-normal text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                   />
                   <button
                     type="submit"
@@ -643,8 +650,13 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
               <div className="mx-auto w-full max-w-5xl shrink-0">
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Current focus from structured updates (I am…). <span className="text-zinc-600 dark:text-zinc-300">Completed</span>{" "}
-                  is the highest juz with a completed event in history.
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">Memorising</span> and{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">revising</span> are tracked separately (different juz is
+                  fine). <span className="font-medium text-zinc-600 dark:text-zinc-300">Active juz</span>,{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">% of active juz</span>, and{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">Surah</span> reflect your current{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">memorising</span> focus (one surah per update).{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">% Quran</span> grows only from memorising posts.
                 </p>
               </div>
               <div className="mx-auto mt-6 w-full max-w-5xl min-h-0 flex-1 overflow-auto rounded-xl border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -652,16 +664,18 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   <thead className="sticky top-0 bg-zinc-100/95 text-xs font-medium uppercase tracking-wide text-zinc-500 backdrop-blur-sm dark:bg-zinc-800/95 dark:text-zinc-400">
                     <tr>
                       <th className="px-4 py-3">Name</th>
-                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Revising</th>
+                      <th className="px-4 py-3">Memorising</th>
                       <th className="px-4 py-3 text-right">Active juz</th>
                       <th className="px-4 py-3 text-right">% of active juz</th>
-                      <th className="px-4 py-3 text-right">Completed</th>
+                      <th className="px-4 py-3">Surah (memorising)</th>
+                      <th className="px-4 py-3 text-right">% Quran</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!progress || progress.dashboard.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
+                        <td colSpan={7} className="px-4 py-10 text-center text-zinc-500">
                           No members yet.
                         </td>
                       </tr>
@@ -669,21 +683,17 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                       progress.dashboard.map((row) => (
                         <tr key={row.member_id} className="border-t border-zinc-200 dark:border-zinc-800">
                           <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{row.display_name}</td>
-                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                            {row.activity === "memorizing"
-                              ? "Memorising"
-                              : row.activity === "revising"
-                                ? "Revising"
-                                : "—"}
-                          </td>
+                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.revising}</td>
+                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.memorising}</td>
                           <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
                             {row.active_juz ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
                             {row.pct_active_juz != null ? `${row.pct_active_juz}%` : "—"}
                           </td>
+                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.surah_memorising}</td>
                           <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                            {row.max_juz_completed}
+                            {row.pct_quran}%
                           </td>
                         </tr>
                       ))
@@ -698,7 +708,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
               <div className="mx-auto w-full max-w-3xl shrink-0">
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Highest juz anyone has logged by day. Dashed line is a simple projection (illustrative).
+                  Highest <span className="text-zinc-600 dark:text-zinc-300">% Quran memorised</span> in the group by day
+                  (from memorising posts only; surahs accumulate in any order). Dashed line is an illustrative projection.
                 </p>
               </div>
               <div className="mx-auto mt-6 w-full max-w-3xl min-h-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -710,8 +721,9 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                       <LineChart data={chartRows} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
                         <XAxis dataKey="date" tick={{ fontSize: 10 }} className="text-zinc-500" />
-                        <YAxis domain={[0, 30]} width={32} tick={{ fontSize: 10 }} className="text-zinc-500" />
+                        <YAxis domain={[0, 100]} width={36} tick={{ fontSize: 10 }} className="text-zinc-500" />
                         <Tooltip
+                          formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, ""]}
                           contentStyle={{
                             borderRadius: "0.75rem",
                             border: "1px solid rgb(228 228 231)",
@@ -722,7 +734,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                         <Line
                           type="monotone"
                           dataKey="recorded"
-                          name="Recorded"
+                          name="Recorded %"
                           stroke="#047857"
                           strokeWidth={2}
                           dot={{ r: 3 }}
@@ -731,7 +743,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                         <Line
                           type="monotone"
                           dataKey="forecast"
-                          name="Projection"
+                          name="Projection %"
                           stroke="#10b981"
                           strokeWidth={2}
                           strokeDasharray="6 4"
@@ -749,7 +761,9 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           {panel === "bars" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
               <div className="mx-auto w-full max-w-3xl shrink-0">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Max completed juz per member.</p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  % of the Quran memorised (whole surahs you’ve logged under Memorising, any order).
+                </p>
               </div>
               <div className="mx-auto mt-6 w-full max-w-3xl min-h-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
                 {!progress || progress.leaderboard.length === 0 ? (
@@ -760,16 +774,16 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                       <BarChart
                         data={progress.leaderboard.map((r) => ({
                           name: r.display_name.length > 14 ? `${r.display_name.slice(0, 13)}…` : r.display_name,
-                          juz: r.max_juz,
+                          pct: r.pct_quran,
                         }))}
                         layout="vertical"
                         margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                        <XAxis type="number" domain={[0, 30]} tick={{ fontSize: 10 }} />
+                        <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
                         <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} />
-                        <Tooltip />
-                        <Bar dataKey="juz" name="Max juz" fill="#047857" radius={[0, 4, 4, 0]} />
+                        <Tooltip formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, "% Quran"]} />
+                        <Bar dataKey="pct" name="% Quran" fill="#047857" radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
