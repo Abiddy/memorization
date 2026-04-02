@@ -24,7 +24,7 @@ create table if not exists public.messages (
 create table if not exists public.progress_events (
   id uuid primary key default gen_random_uuid(),
   member_id uuid not null references public.members (id) on delete cascade,
-  event_kind text not null default 'completed' check (event_kind in ('completed', 'memorizing', 'revising')),
+  event_kind text not null default 'completed' check (event_kind in ('completed', 'memorizing', 'revising', 'reciting')),
   juz integer check (juz is null or (juz >= 1 and juz <= 30)),
   surah text,
   summary text,
@@ -37,12 +37,9 @@ create index if not exists progress_events_member_idx on public.progress_events 
 
 create table if not exists public.member_progress (
   member_id uuid primary key references public.members (id) on delete cascade,
-  memorizing_juz int check (memorizing_juz is null or (memorizing_juz >= 1 and memorizing_juz <= 30)),
-  memorizing_surah int check (memorizing_surah is null or (memorizing_surah >= 1 and memorizing_surah <= 114)),
-  memorizing_pct_active_juz numeric(6, 1),
-  revising_juz int check (revising_juz is null or (revising_juz >= 1 and revising_juz <= 30)),
+  memorizing_surahs int[] not null default '{}',
   revising_surahs int[] not null default '{}',
-  revising_pct_active_juz numeric(6, 1),
+  reciting_surahs int[] not null default '{}',
   updated_at timestamptz not null default now()
 );
 

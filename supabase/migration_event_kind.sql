@@ -9,4 +9,4 @@ alter table public.progress_events
 
 alter table public.progress_events
   add constraint progress_events_event_kind_check
-  check (event_kind in ('completed', 'memorizing', 'revising'));
+  check (event_kind in ('completed', 'memorizing', 'revising', 'reciting'));

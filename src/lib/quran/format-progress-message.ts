@@ -1,15 +1,28 @@
 import { surahName } from "./surah-names";
 
-export type ProgressActivity = "memorizing" | "revising";
+export type ProgressActivity = "memorizing" | "revising" | "reciting";
 
+/** Optional `juz` is for the chat line only when the user picked a juz in the picker; not a DB constraint. */
 export function formatProgressChatLine(
   activity: ProgressActivity,
-  juz: number,
-  surahIds: number[]
+  surahIds: number[],
+  juz?: number
 ): string {
-  const verb = activity === "memorizing" ? "memorising" : "revising";
+  const verb =
+    activity === "memorizing" ? "memorising" : activity === "revising" ? "revising" : "reciting";
   const detail = describeSurahSelection(surahIds);
-  return `I am ${verb} Juz ${juz} — ${detail}`;
+  if (juz != null) {
+    return `I am ${verb} Juz ${juz} — ${detail}`;
+  }
+  return `I am ${verb} — ${detail}`;
+}
+
+export function formatProgressEventSummary(activity: ProgressActivity, surahIds: number[]): string {
+  const sorted = [...new Set(surahIds)].filter((n) => n >= 1 && n <= 114).sort((a, b) => a - b);
+  const label =
+    activity === "memorizing" ? "Memorising" : activity === "revising" ? "Revising" : "Reciting";
+  if (sorted.length === 0) return `${label}`;
+  return `${label}: ${sorted.map((id) => surahName(id)).join(", ")}`;
 }
 
 function describeSurahSelection(ids: number[]): string {

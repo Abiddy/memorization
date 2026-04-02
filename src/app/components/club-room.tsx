@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import { StructuredProgressPicker } from "@/app/components/structured-progress-picker";
+import { SurahHeatmapPanel, type HeatmapPayload } from "@/app/components/surah-heatmap-panel";
 
 type MessageRow = {
   id: string;
@@ -29,9 +30,7 @@ type DashboardRow = {
   display_name: string;
   revising: string;
   memorising: string;
-  active_juz: number | null;
-  pct_active_juz: number | null;
-  surah_memorising: string;
+  reciting: string;
   pct_quran: number;
 };
 
@@ -40,9 +39,10 @@ type ProgressReport = {
   clubSeries: { date: string; clubPct: number }[];
   projection: { date: string; clubPct: number; projected: true }[];
   dashboard: DashboardRow[];
+  heatmap: HeatmapPayload | null;
 };
 
-type MainPanel = "chat" | "focus" | "trajectory" | "bars";
+type MainPanel = "chat" | "focus" | "heatmap" | "trajectory" | "bars";
 
 const NAV: {
   id: MainPanel;
@@ -68,6 +68,20 @@ const NAV: {
         <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="10" />
           <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
+    },
+  },
+  {
+    id: "heatmap",
+    label: "Surah matrix",
+    Icon: function IconHeatmap({ className }: { className?: string }) {
+      return (
+        <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
         </svg>
       );
     },
@@ -136,6 +150,8 @@ function panelTitle(p: MainPanel): string {
       return "Group chat";
     case "focus":
       return "Current focus";
+    case "heatmap":
+      return "Surah matrix";
     case "trajectory":
       return "Club trajectory";
     case "bars":
@@ -307,6 +323,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
       clubSeries: data.clubSeries ?? [],
       projection: data.projection ?? [],
       dashboard: data.dashboard ?? [],
+      heatmap: data.heatmap ?? null,
     });
   }, []);
 
@@ -650,13 +667,12 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
               <div className="mx-auto w-full max-w-5xl shrink-0">
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">Memorising</span> and{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">revising</span> are tracked separately (different juz is
-                  fine). <span className="font-medium text-zinc-600 dark:text-zinc-300">Active juz</span>,{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">% of active juz</span>, and{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">Surah</span> reflect your current{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">memorising</span> focus (one surah per update).{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">% Quran</span> grows only from memorising posts.
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">Memorising</span>,{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">revising</span>, and{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">reciting</span> are tracked separately by{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">surah</span> (each column lists the surahs on that
+                  track). <span className="font-medium text-zinc-600 dark:text-zinc-300">% Quran</span> reflects surahs you have
+                  memorised (from memorising updates and the Surah matrix).
                 </p>
               </div>
               <div className="mx-auto mt-6 w-full max-w-5xl min-h-0 flex-1 overflow-auto rounded-xl border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -666,16 +682,14 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                       <th className="px-4 py-3">Name</th>
                       <th className="px-4 py-3">Revising</th>
                       <th className="px-4 py-3">Memorising</th>
-                      <th className="px-4 py-3 text-right">Active juz</th>
-                      <th className="px-4 py-3 text-right">% of active juz</th>
-                      <th className="px-4 py-3">Surah (memorising)</th>
+                      <th className="px-4 py-3">Reciting</th>
                       <th className="px-4 py-3 text-right">% Quran</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!progress || progress.dashboard.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-zinc-500">
+                        <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
                           No members yet.
                         </td>
                       </tr>
@@ -685,13 +699,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                           <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{row.display_name}</td>
                           <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.revising}</td>
                           <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.memorising}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                            {row.active_juz ?? "—"}
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                            {row.pct_active_juz != null ? `${row.pct_active_juz}%` : "—"}
-                          </td>
-                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.surah_memorising}</td>
+                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{row.reciting}</td>
                           <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
                             {row.pct_quran}%
                           </td>
@@ -701,6 +709,17 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   </tbody>
                 </table>
               </div>
+            </div>
+          ) : null}
+
+          {panel === "heatmap" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <SurahHeatmapPanel
+                heatmap={progress?.heatmap ?? undefined}
+                currentMemberId={memberId}
+                myPctQuran={progress?.dashboard.find((r) => r.member_id === memberId)?.pct_quran ?? null}
+                onSaved={() => void loadProgress()}
+              />
             </div>
           ) : null}
 

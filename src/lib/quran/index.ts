@@ -7,7 +7,12 @@ export {
   ayahsOfSurahWithinJuz,
   percentOfJuzFromSelectedSurahs,
   validateSurahsBelongToJuz,
+  inferSmallestJuzForSurahs,
   type JuzSegment,
 } from "./juz-ranges";
-export { formatProgressChatLine, type ProgressActivity } from "./format-progress-message";
+export {
+  formatProgressChatLine,
+  formatProgressEventSummary,
+  type ProgressActivity,
+} from "./format-progress-message";
 export { percentQuranFromSurahIds, totalQuranAyahs } from "./percent-quran";

@@ -23,3 +23,18 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+@keyframes matrix-save-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.matrix-save-bar-enter {
+  animation: matrix-save-bar-in 0.28s ease-out both;
+}

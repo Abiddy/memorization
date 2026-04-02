@@ -94,3 +94,13 @@ export function validateSurahsBelongToJuz(juz: number, surahIds: number[]): bool
   const allowed = new Set(uniqueSurahsInJuz(juz));
   return surahIds.every((id) => allowed.has(id));
 }
+
+/** Smallest juz (1–30) that contains every surah in `surahIds`, or null if no single juz fits. */
+export function inferSmallestJuzForSurahs(surahIds: number[]): number | null {
+  const uniq = [...new Set(surahIds)].filter((n) => n >= 1 && n <= 114).sort((a, b) => a - b);
+  if (uniq.length === 0) return null;
+  for (let j = 1; j <= 30; j++) {
+    if (validateSurahsBelongToJuz(j, uniq)) return j;
+  }
+  return null;
+}

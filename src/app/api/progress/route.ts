@@ -3,9 +3,91 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildMemorizationTimeline } from "@/lib/progress-aggregate";
 import { percentQuranFromSurahIds, surahName } from "@/lib/quran";
 
-function juzLabel(juz: number | null): string {
-  if (juz == null) return "—";
-  return `Juz ${juz}`;
+type HeatmapActivity = "memorizing" | "revising" | "reciting";
+
+type MpShape = {
+  memorizing_surahs: number[];
+  revising_surahs: number[];
+  reciting_surahs: number[];
+};
+
+const HEATMAP_ACT_ORDER: HeatmapActivity[] = ["memorizing", "revising", "reciting"];
+
+function pushHeatmapAct(surahs: (HeatmapActivity[] | null)[], surahNum: number, act: HeatmapActivity) {
+  if (surahNum < 1 || surahNum > 114) return;
+  if (!surahs[surahNum]) surahs[surahNum] = [];
+  if (!surahs[surahNum]!.includes(act)) surahs[surahNum]!.push(act);
+}
+
+function buildHeatmap(
+  members: { id: string; display_name: string }[],
+  mpByMember: Map<string, MpShape>
+) {
+  const rows = [...members]
+    .sort((a, b) => a.display_name.localeCompare(b.display_name))
+    .map((m) => {
+      const mp = mpByMember.get(m.id);
+      const surahs: (HeatmapActivity[] | null)[] = Array(115).fill(null);
+
+      for (const s of mp?.memorizing_surahs ?? []) {
+        if (s >= 1 && s <= 114) pushHeatmapAct(surahs, s, "memorizing");
+      }
+      for (const s of mp?.revising_surahs ?? []) {
+        pushHeatmapAct(surahs, s, "revising");
+      }
+      for (const s of mp?.reciting_surahs ?? []) {
+        pushHeatmapAct(surahs, s, "reciting");
+      }
+
+      for (let i = 1; i <= 114; i++) {
+        const cell = surahs[i];
+        if (cell && cell.length > 1) {
+          cell.sort((a, b) => HEATMAP_ACT_ORDER.indexOf(a) - HEATMAP_ACT_ORDER.indexOf(b));
+        }
+      }
+
+      return {
+        member_id: m.id,
+        display_name: m.display_name,
+        surahs,
+      };
+    });
+
+  let membersMemorising = 0;
+  let membersRevising = 0;
+  let membersReciting = 0;
+
+  for (const row of rows) {
+    let hasM = false;
+    let hasR = false;
+    let hasC = false;
+    for (let i = 1; i <= 114; i++) {
+      const acts = row.surahs[i];
+      if (!acts) continue;
+      if (acts.includes("memorizing")) hasM = true;
+      if (acts.includes("revising")) hasR = true;
+      if (acts.includes("reciting")) hasC = true;
+    }
+    if (hasM) membersMemorising++;
+    if (hasR) membersRevising++;
+    if (hasC) membersReciting++;
+  }
+
+  return {
+    rows,
+    summary: {
+      membersMemorising,
+      membersRevising,
+      membersReciting,
+      memberCount: members.length,
+    },
+  };
+}
+
+function formatSurahsCell(ids: number[]): string {
+  const sorted = [...new Set(ids)].filter((n) => n >= 1 && n <= 114).sort((a, b) => a - b);
+  if (sorted.length === 0) return "—";
+  return sorted.map((id) => surahName(id)).join(", ");
 }
 
 export async function GET() {
@@ -50,7 +132,7 @@ export async function GET() {
   leaderboard.sort((a, b) => b.pct_quran - a.pct_quran || a.display_name.localeCompare(b.display_name));
 
   const { data: mpRows, error: mpError } = await admin.from("member_progress").select(
-    "member_id, memorizing_juz, memorizing_surah, memorizing_pct_active_juz, revising_juz, revising_surahs, revising_pct_active_juz, updated_at"
+    "member_id, memorizing_surahs, revising_surahs, reciting_surahs, updated_at"
   );
 
   if (mpError) {
@@ -61,14 +143,9 @@ export async function GET() {
     (mpRows ?? []).map((r) => [
       r.member_id,
       {
-        memorizing_juz: r.memorizing_juz as number | null,
-        memorizing_surah: r.memorizing_surah as number | null,
-        memorizing_pct_active_juz:
-          r.memorizing_pct_active_juz != null ? Number(r.memorizing_pct_active_juz) : null,
-        revising_juz: r.revising_juz as number | null,
+        memorizing_surahs: (r.memorizing_surahs as number[] | null) ?? [],
         revising_surahs: (r.revising_surahs as number[] | null) ?? [],
-        revising_pct_active_juz:
-          r.revising_pct_active_juz != null ? Number(r.revising_pct_active_juz) : null,
+        reciting_surahs: (r.reciting_surahs as number[] | null) ?? [],
       },
     ])
   );
@@ -76,24 +153,27 @@ export async function GET() {
   const dashboard = (members ?? []).map((m) => {
     const mp = mpByMember.get(m.id);
     const pctQuran = percentQuranFromSurahIds((m.memorized_surah_ids as number[] | null) ?? []);
-    const ms = mp?.memorizing_surah;
     return {
       member_id: m.id,
       display_name: m.display_name,
-      revising: juzLabel(mp?.revising_juz ?? null),
-      memorising: juzLabel(mp?.memorizing_juz ?? null),
-      active_juz: mp?.memorizing_juz ?? null,
-      pct_active_juz: mp?.memorizing_pct_active_juz ?? null,
-      surah_memorising: ms != null && ms >= 1 && ms <= 114 ? surahName(ms) : "—",
+      revising: formatSurahsCell(mp?.revising_surahs ?? []),
+      memorising: formatSurahsCell(mp?.memorizing_surahs ?? []),
+      reciting: formatSurahsCell(mp?.reciting_surahs ?? []),
       pct_quran: pctQuran,
     };
   });
   dashboard.sort((a, b) => a.display_name.localeCompare(b.display_name));
+
+  const heatmap = buildHeatmap(
+    (members ?? []).map((m) => ({ id: m.id, display_name: m.display_name })),
+    mpByMember as Map<string, MpShape>
+  );
 
   return NextResponse.json({
     leaderboard,
     clubSeries,
     projection,
     dashboard,
+    heatmap,
   });
 }
