@@ -17,6 +17,24 @@ export type ProjectionPoint = {
   projected: true;
 };
 
+export type MemberSeriesPoint = {
+  date: string;
+  pct: number;
+};
+
+export type MemberProjectionPoint = {
+  date: string;
+  pct: number;
+  projected: true;
+};
+
+export type MemberTrajectory = {
+  member_id: string;
+  display_name: string;
+  recorded: MemberSeriesPoint[];
+  projection: MemberProjectionPoint[];
+};
+
 type EventRow = {
   member_id: string;
   display_name: string;
@@ -68,6 +86,33 @@ function clubMaxPctQuran(memorizedByMember: Map<string, Set<number>>, memberIds:
   return max;
 }
 
+function projectionFromSeries<T extends { date: string }>(
+  points: T[],
+  getY: (p: T) => number
+): { date: string; pct: number; projected: true }[] {
+  if (points.length < 2) return [];
+  const take = points.slice(-14);
+  const xs = take.map((_, i) => i);
+  const ys = take.map((p) => getY(p));
+  const { slope, intercept } = linearRegression(xs, ys);
+  const lastDay = new Date(`${take[take.length - 1]!.date}T00:00:00.000Z`);
+  const startIndex = take.length;
+  const out: { date: string; pct: number; projected: true }[] = [];
+  for (let k = 1; k <= 10; k++) {
+    const t = startIndex + k - 1;
+    let y = slope * t + intercept;
+    y = Math.min(100, Math.max(0, y));
+    const d = new Date(lastDay);
+    d.setUTCDate(d.getUTCDate() + k);
+    out.push({
+      date: d.toISOString().slice(0, 10),
+      pct: Math.round(y * 10) / 10,
+      projected: true,
+    });
+  }
+  return out;
+}
+
 /**
  * Timeline from memorising events only: union surahs per member over time (order ≠ completion).
  * Revising events do not add to memorised coverage.
@@ -75,6 +120,7 @@ function clubMaxPctQuran(memorizedByMember: Map<string, Set<number>>, memberIds:
 export function buildMemorizationTimeline(events: EventRow[]): {
   clubSeries: ClubPoint[];
   projection: ProjectionPoint[];
+  memberTrajectories: MemberTrajectory[];
 } {
   const sorted = [...events].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -83,6 +129,14 @@ export function buildMemorizationTimeline(events: EventRow[]): {
   const nameByMember = new Map<string, string>();
   const memorizedByMember = new Map<string, Set<number>>();
   const dayToClubPct = new Map<string, number>();
+  /** memberId -> day -> max % that calendar day (from their memorising posts). */
+  const memberDayToPct = new Map<string, Map<string, number>>();
+
+  function memberPct(memberId: string): number {
+    const set = memorizedByMember.get(memberId);
+    if (!set || set.size === 0) return 0;
+    return percentQuranFromSurahIds([...set]);
+  }
 
   for (const e of sorted) {
     nameByMember.set(e.member_id, e.display_name);
@@ -95,6 +149,16 @@ export function buildMemorizationTimeline(events: EventRow[]): {
           memorizedByMember.set(e.member_id, set);
         }
         for (const id of ids) set.add(id);
+
+        const day = dayKey(e.created_at);
+        let dayMap = memberDayToPct.get(e.member_id);
+        if (!dayMap) {
+          dayMap = new Map();
+          memberDayToPct.set(e.member_id, dayMap);
+        }
+        const p = memberPct(e.member_id);
+        const prevM = dayMap.get(day) ?? 0;
+        dayMap.set(day, Math.max(prevM, p));
       }
     }
     const day = dayKey(e.created_at);
@@ -107,27 +171,32 @@ export function buildMemorizationTimeline(events: EventRow[]): {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, clubPct]) => ({ date, clubPct }));
 
-  const projection: ProjectionPoint[] = [];
-  if (clubSeries.length >= 2) {
-    const take = clubSeries.slice(-14);
-    const xs = take.map((_, i) => i);
-    const ys = take.map((p) => p.clubPct);
-    const { slope, intercept } = linearRegression(xs, ys);
-    const lastDay = new Date(`${take[take.length - 1]!.date}T00:00:00.000Z`);
-    const startIndex = take.length;
-    for (let k = 1; k <= 10; k++) {
-      const t = startIndex + k - 1;
-      let y = slope * t + intercept;
-      y = Math.min(100, Math.max(0, y));
-      const d = new Date(lastDay);
-      d.setUTCDate(d.getUTCDate() + k);
-      projection.push({
-        date: d.toISOString().slice(0, 10),
-        clubPct: Math.round(y * 10) / 10,
-        projected: true,
-      });
-    }
-  }
+  const projection: ProjectionPoint[] =
+    clubSeries.length >= 2
+      ? projectionFromSeries(clubSeries, (p) => p.clubPct).map((p) => ({
+          date: p.date,
+          clubPct: p.pct,
+          projected: true,
+        }))
+      : [];
 
-  return { clubSeries, projection };
+  const memberTrajectories: MemberTrajectory[] = [];
+  for (const [memberId, displayName] of nameByMember) {
+    const dayMap = memberDayToPct.get(memberId);
+    if (!dayMap || dayMap.size === 0) continue;
+    const recorded: MemberSeriesPoint[] = Array.from(dayMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, pct]) => ({ date, pct }));
+    const memberProj =
+      recorded.length >= 2 ? projectionFromSeries(recorded, (p) => p.pct) : [];
+    memberTrajectories.push({
+      member_id: memberId,
+      display_name: displayName,
+      recorded,
+      projection: memberProj,
+    });
+  }
+  memberTrajectories.sort((a, b) => a.display_name.localeCompare(b.display_name));
+
+  return { clubSeries, projection, memberTrajectories };
 }

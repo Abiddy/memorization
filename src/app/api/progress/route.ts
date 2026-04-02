@@ -127,7 +127,7 @@ export async function GET() {
       created_at: row.created_at,
     })) ?? [];
 
-  const { clubSeries, projection } = buildMemorizationTimeline(flat);
+  const { clubSeries, projection, memberTrajectories } = buildMemorizationTimeline(flat);
 
   const leaderboard = (members ?? []).map((m) => ({
     member_id: m.id,
@@ -178,6 +178,7 @@ export async function GET() {
     leaderboard,
     clubSeries,
     projection,
+    memberTrajectories,
     dashboard,
     heatmap,
   });

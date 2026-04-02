@@ -664,7 +664,7 @@ export function SurahHeatmapPanel({
                   <tr>
                     <th
                       scope="col"
-                      className="sticky left-0 top-0 z-50 w-[5.85rem] min-w-[5.85rem] max-w-[5.85rem] rounded-md border border-zinc-200/70 bg-white py-2 pl-2 pr-1 align-bottom sm:w-[7.75rem] sm:min-w-[7.75rem] sm:max-w-[7.75rem] sm:py-2.5 sm:pl-2.5 sm:pr-1.5 dark:border-zinc-700/65 dark:bg-zinc-950"
+                      className="sticky left-0 top-0 z-50 w-[5.85rem] min-w-[5.85rem] max-w-[5.85rem] bg-white py-2 pl-2 pr-1 align-bottom sm:w-[7.75rem] sm:min-w-[7.75rem] sm:max-w-[7.75rem] sm:py-2.5 sm:pl-2.5 sm:pr-1.5 dark:bg-zinc-950"
                     >
                       <div className="flex items-center gap-1">
                         <span className="min-w-0 flex-1 text-left text-[9px] font-semibold uppercase tracking-wide text-zinc-400 sm:text-[10px] dark:text-zinc-500">

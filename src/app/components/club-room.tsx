@@ -21,6 +21,7 @@ import {
   SurahMatrixHelpButton,
   type HeatmapPayload,
 } from "@/app/components/surah-heatmap-panel";
+import type { MemberTrajectory } from "@/lib/progress-aggregate";
 
 type MessageRow = {
   id: string;
@@ -49,23 +50,34 @@ function FocusTrackSurahList({ entries }: { entries: DashboardSurahEntry[] }) {
   if (entries.length === 0) {
     return <span className="text-zinc-400 dark:text-zinc-500">—</span>;
   }
+  const badgeClass =
+    "inline-flex min-w-[1rem] shrink-0 items-center justify-center rounded border border-zinc-300/90 bg-zinc-200/90 px-0.5 py-px text-[8px] font-semibold tabular-nums leading-none text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 lg:min-w-[1.125rem] lg:rounded-md lg:px-1 lg:text-[9px]";
   return (
-    <span className="inline leading-relaxed">
-      {entries.map((e, i) => (
-        <Fragment key={e.surahId}>
-          {i > 0 ? <span className="text-zinc-500">, </span> : null}
-          <span className="inline-flex items-baseline gap-1">
-            <span
-              className="inline-flex min-w-[1.125rem] shrink-0 items-center justify-center rounded-md border border-zinc-300/90 bg-zinc-200/90 px-1 py-px text-[9px] font-semibold tabular-nums leading-none text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
-              title={`Juz ${e.juz}`}
-            >
+    <>
+      <span className="flex flex-col gap-0.5 text-[10px] leading-tight text-zinc-600 dark:text-zinc-400 lg:hidden">
+        {entries.map((e) => (
+          <span key={e.surahId} className="inline-flex min-w-0 max-w-full items-baseline gap-0.5">
+            <span className={badgeClass} title={`Juz ${e.juz}`}>
               {e.juz}
             </span>
-            <span>{e.name}</span>
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{e.name}</span>
           </span>
-        </Fragment>
-      ))}
-    </span>
+        ))}
+      </span>
+      <span className="hidden text-sm leading-relaxed text-zinc-600 dark:text-zinc-400 lg:inline">
+        {entries.map((e, i) => (
+          <Fragment key={e.surahId}>
+            {i > 0 ? <span className="text-zinc-500">, </span> : null}
+            <span className="inline-flex items-baseline gap-1">
+              <span className={badgeClass} title={`Juz ${e.juz}`}>
+                {e.juz}
+              </span>
+              <span>{e.name}</span>
+            </span>
+          </Fragment>
+        ))}
+      </span>
+    </>
   );
 }
 
@@ -73,6 +85,7 @@ type ProgressReport = {
   leaderboard: { member_id: string; display_name: string; pct_quran: number }[];
   clubSeries: { date: string; clubPct: number }[];
   projection: { date: string; clubPct: number; projected: true }[];
+  memberTrajectories: MemberTrajectory[];
   dashboard: DashboardRow[];
   heatmap: HeatmapPayload | null;
 };
@@ -123,7 +136,7 @@ const NAV: {
   },
   {
     id: "trajectory",
-    label: "Trajectory",
+    label: "Projections",
     Icon: function IconLine({ className }: { className?: string }) {
       return (
         <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -188,7 +201,7 @@ function panelTitle(p: MainPanel): string {
     case "heatmap":
       return "Surah matrix";
     case "trajectory":
-      return "Club trajectory";
+      return "Projections";
     case "bars":
       return "Leaderboard bars";
     default:
@@ -289,6 +302,152 @@ function ClubSideNav({
 }
 
 type MemberBrief = { id: string; display_name: string };
+
+const TRAJECTORY_PALETTE = [
+  "#047857",
+  "#2563eb",
+  "#b45309",
+  "#7c3aed",
+  "#db2777",
+  "#0891b2",
+  "#4f46e5",
+  "#65a30d",
+  "#ea580c",
+  "#0d9488",
+  "#c026d3",
+  "#ca8a04",
+  "#16a34a",
+  "#9333ea",
+];
+
+function lastRecordedPctUpTo(series: { date: string; pct: number }[], d: string): number | undefined {
+  let v: number | undefined;
+  for (const p of series) {
+    if (p.date <= d) v = p.pct;
+    else break;
+  }
+  return v;
+}
+
+function shortLegendName(name: string, max = 9): string {
+  const t = name.trim();
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
+}
+
+type TrajectoryLineSpec = {
+  dataKey: string;
+  name: string;
+  stroke: string;
+  dashed?: boolean;
+};
+
+function buildProjectionChart(
+  trajs: MemberTrajectory[],
+  scope: "you" | "all",
+  selfId: string | undefined
+): { rows: Record<string, string | number | undefined>[]; lines: TrajectoryLineSpec[] } {
+  if (trajs.length === 0) return { rows: [], lines: [] };
+
+  if (scope === "you") {
+    const self = selfId ? trajs.find((t) => t.member_id === selfId) : undefined;
+    if (!self) return { rows: [], lines: [] };
+    const dateSet = new Set<string>();
+    for (const p of self.recorded) dateSet.add(p.date);
+    for (const p of self.projection) dateSet.add(p.date);
+    const dates = [...dateSet].sort((a, b) => a.localeCompare(b));
+    const rows = dates.map((date) => {
+      const recorded = lastRecordedPctUpTo(self.recorded, date);
+      const forecast = self.projection.find((p) => p.date === date)?.pct;
+      return {
+        date,
+        ...(recorded !== undefined ? { recorded } : {}),
+        ...(forecast !== undefined ? { forecast } : {}),
+      } as Record<string, string | number | undefined>;
+    });
+    return {
+      rows,
+      lines: [
+        { dataKey: "recorded", name: "Recorded %", stroke: "#047857" },
+        { dataKey: "forecast", name: "Projection %", stroke: "#10b981", dashed: true },
+      ],
+    };
+  }
+
+  const trajsSorted = [...trajs].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const sortedIds = trajsSorted.map((t) => t.member_id);
+  const dateSet = new Set<string>();
+  for (const t of trajs) {
+    for (const p of t.recorded) dateSet.add(p.date);
+    for (const p of t.projection) dateSet.add(p.date);
+  }
+  const dates = [...dateSet].sort((a, b) => a.localeCompare(b));
+  const rows = dates.map((date) => {
+    const row: Record<string, string | number | undefined> = { date };
+    for (const t of trajs) {
+      const rec = lastRecordedPctUpTo(t.recorded, date);
+      if (rec !== undefined) row[`rec_${t.member_id}`] = rec;
+      const prj = t.projection.find((p) => p.date === date)?.pct;
+      if (prj !== undefined) row[`prj_${t.member_id}`] = prj;
+    }
+    return row;
+  });
+
+  const lines: TrajectoryLineSpec[] = [];
+  for (const t of trajsSorted) {
+    const stroke =
+      TRAJECTORY_PALETTE[sortedIds.indexOf(t.member_id) % TRAJECTORY_PALETTE.length] ?? "#047857";
+    const base = shortLegendName(t.display_name);
+    lines.push(
+      { dataKey: `rec_${t.member_id}`, name: `${base} · rec`, stroke },
+      { dataKey: `prj_${t.member_id}`, name: `${base} · proj`, stroke, dashed: true }
+    );
+  }
+  return { rows, lines };
+}
+
+function ProjectionsScopeToggle({
+  value,
+  onChange,
+  youDisabled,
+}: {
+  value: "you" | "all";
+  onChange: (v: "you" | "all") => void;
+  youDisabled?: boolean;
+}) {
+  return (
+    <div
+      className="flex shrink-0 items-center rounded-full border border-zinc-200/90 bg-zinc-100/80 p-0.5 dark:border-zinc-600 dark:bg-zinc-800/60"
+      role="group"
+      aria-label="Projection scope"
+    >
+      <button
+        type="button"
+        aria-pressed={value === "you"}
+        disabled={youDisabled}
+        onClick={() => onChange("you")}
+        className={`rounded-full px-2.5 py-1 text-xs font-medium transition sm:px-3 sm:text-sm ${
+          value === "you"
+            ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
+            : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        } disabled:cursor-not-allowed disabled:opacity-45`}
+      >
+        You
+      </button>
+      <button
+        type="button"
+        aria-pressed={value === "all"}
+        onClick={() => onChange("all")}
+        className={`rounded-full px-2.5 py-1 text-xs font-medium transition sm:px-3 sm:text-sm ${
+          value === "all"
+            ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
+            : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        }`}
+      >
+        All
+      </button>
+    </div>
+  );
+}
 
 function IconUserPlus({ className }: { className?: string }) {
   return (
@@ -432,6 +591,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   const [progress, setProgress] = useState<ProgressReport | null>(null);
   const [groupMembers, setGroupMembers] = useState<MemberBrief[]>([]);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [projectionScope, setProjectionScope] = useState<"you" | "all">("you");
   const listRef = useRef<HTMLDivElement>(null);
   const inviteCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -450,6 +610,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
       leaderboard: data.leaderboard ?? [],
       clubSeries: data.clubSeries ?? [],
       projection: data.projection ?? [],
+      memberTrajectories: data.memberTrajectories ?? [],
       dashboard: data.dashboard ?? [],
       heatmap: data.heatmap ?? null,
     });
@@ -563,19 +724,24 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     }
   }, [mobileNavOpen]);
 
-  const chartRows = useMemo(() => {
-    if (!progress) return [];
-    const map = new Map<string, { date: string; recorded?: number; forecast?: number }>();
-    for (const p of progress.clubSeries) {
-      map.set(p.date, { date: p.date, recorded: p.clubPct });
-    }
-    for (const p of progress.projection) {
-      const existing = map.get(p.date) ?? { date: p.date };
-      existing.forecast = p.clubPct;
-      map.set(p.date, existing);
-    }
-    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [progress]);
+  const projectionChart = useMemo(
+    () =>
+      buildProjectionChart(
+        progress?.memberTrajectories ?? [],
+        projectionScope,
+        memberId ?? undefined
+      ),
+    [progress?.memberTrajectories, projectionScope, memberId]
+  );
+
+  const trajectoryYouAvailable = useMemo(() => {
+    if (!memberId || !progress?.memberTrajectories?.length) return false;
+    return progress.memberTrajectories.some((t) => t.member_id === memberId);
+  }, [memberId, progress?.memberTrajectories]);
+
+  useEffect(() => {
+    if (!trajectoryYouAvailable && projectionScope === "you") setProjectionScope("all");
+  }, [trajectoryYouAvailable, projectionScope]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -650,6 +816,29 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
       </div>
     );
 
+    if (mine) {
+      return (
+        <div className="flex w-full justify-end">
+          <div className="max-w-[min(640px,calc(100%-0.5rem))]">
+            {/* Indent so “You · time” lines up with the bubble’s right edge (avatar sits past that). */}
+            <div className="mb-1.5 pr-[3.25rem] text-right text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
+              <span className="font-medium text-zinc-600 dark:text-zinc-400">{label}</span>
+              <span className="text-zinc-400"> · </span>
+              <time className="tabular-nums text-zinc-400 dark:text-zinc-500" dateTime={m.created_at}>
+                {time}
+              </time>
+            </div>
+            <div className="flex flex-row-reverse items-end justify-end gap-3">
+              {avatar}
+              <div className="min-w-0 max-w-[min(560px,calc(100vw-2rem))] sm:max-w-[min(560px,calc(100vw-220px-4rem))]">
+                {bubble}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="w-full max-w-[min(640px,100%)]">
         {/* Spacer matches avatar width so name/time line up with the bubble, not the avatar */}
@@ -701,6 +890,12 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             <div className="flex min-w-0 max-w-[min(52vw,13.5rem)] shrink-0 items-center justify-end pl-1 sm:max-w-none sm:pl-2">
               <MatrixTrackLegend className="text-right leading-tight" />
             </div>
+          ) : panel === "trajectory" ? (
+            <ProjectionsScopeToggle
+              value={projectionScope}
+              onChange={setProjectionScope}
+              youDisabled={!trajectoryYouAvailable}
+            />
           ) : (
             <GroupMemberStack
               variant="toolbar"
@@ -797,8 +992,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           ) : null}
 
           {panel === "focus" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
-              <div className="mx-auto w-full max-w-5xl shrink-0">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-3 dark:bg-zinc-950 lg:p-6">
+              <div className="mx-auto hidden w-full max-w-5xl shrink-0 lg:block">
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">Memorising</span>,{" "}
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">revising</span>, and{" "}
@@ -808,38 +1003,40 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   memorised (from memorising updates and the Surah matrix).
                 </p>
               </div>
-              <div className="mx-auto mt-6 w-full max-w-5xl min-h-0 flex-1 overflow-auto rounded-xl border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40">
-                <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-zinc-100/95 text-xs font-medium uppercase tracking-wide text-zinc-500 backdrop-blur-sm dark:bg-zinc-800/95 dark:text-zinc-400">
+              <div className="mx-auto mt-0 w-full max-w-5xl min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40 lg:mt-6 lg:rounded-xl">
+                <table className="w-full min-w-[28rem] text-left text-xs lg:min-w-0 lg:text-sm">
+                  <thead className="sticky top-0 bg-zinc-100/95 text-[10px] font-medium uppercase tracking-wide text-zinc-500 backdrop-blur-sm dark:bg-zinc-800/95 dark:text-zinc-400 lg:text-xs">
                     <tr>
-                      <th className="px-4 py-3">Name</th>
-                      <th className="px-4 py-3">Revising</th>
-                      <th className="px-4 py-3">Memorising</th>
-                      <th className="px-4 py-3">Reciting</th>
-                      <th className="px-4 py-3 text-right">% Quran</th>
+                      <th className="px-2 py-2 lg:px-4 lg:py-3">Name</th>
+                      <th className="px-2 py-2 lg:px-4 lg:py-3">Revising</th>
+                      <th className="px-2 py-2 lg:px-4 lg:py-3">Memorising</th>
+                      <th className="px-2 py-2 lg:px-4 lg:py-3">Reciting</th>
+                      <th className="px-2 py-2 text-right lg:px-4 lg:py-3">% Quran</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!progress || progress.dashboard.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
+                        <td colSpan={5} className="px-2 py-8 text-center text-zinc-500 lg:px-4 lg:py-10">
                           No members yet.
                         </td>
                       </tr>
                     ) : (
                       progress.dashboard.map((row) => (
                         <tr key={row.member_id} className="border-t border-zinc-200 dark:border-zinc-800">
-                          <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{row.display_name}</td>
-                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                          <td className="px-2 py-1.5 align-top font-medium text-zinc-900 dark:text-zinc-100 lg:px-4 lg:py-3 lg:align-middle">
+                            {row.display_name}
+                          </td>
+                          <td className="px-2 py-1.5 align-top text-zinc-600 dark:text-zinc-400 lg:px-4 lg:py-3">
                             <FocusTrackSurahList entries={row.revising} />
                           </td>
-                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                          <td className="px-2 py-1.5 align-top text-zinc-600 dark:text-zinc-400 lg:px-4 lg:py-3">
                             <FocusTrackSurahList entries={row.memorising} />
                           </td>
-                          <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                          <td className="px-2 py-1.5 align-top text-zinc-600 dark:text-zinc-400 lg:px-4 lg:py-3">
                             <FocusTrackSurahList entries={row.reciting} />
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                          <td className="px-2 py-1.5 text-right align-top tabular-nums text-zinc-700 dark:text-zinc-300 lg:px-4 lg:py-3 lg:align-middle">
                             {row.pct_quran}%
                           </td>
                         </tr>
@@ -864,50 +1061,59 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
 
           {panel === "trajectory" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
-              <div className="mx-auto w-full max-w-3xl shrink-0">
+              <div className="mx-auto hidden w-full max-w-3xl shrink-0 lg:block">
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Highest <span className="text-zinc-600 dark:text-zinc-300">% Quran memorised</span> in the group by day
-                  (from memorising posts only; surahs accumulate in any order). Dashed line is an illustrative projection.
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">You</span> shows your % Quran from memorising
+                  posts; <span className="font-medium text-zinc-600 dark:text-zinc-300">All</span> overlays everyone in
+                  different colours. Dashed segments are illustrative projections from recent trend.
                 </p>
               </div>
-              <div className="mx-auto mt-6 w-full max-w-3xl min-h-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-                {chartRows.length === 0 ? (
-                  <p className="text-sm text-zinc-500">Not enough data for a chart.</p>
+              <div className="mx-auto mt-0 w-full max-w-3xl min-h-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 dark:border-zinc-800 dark:bg-zinc-900/40 lg:mt-6">
+                {projectionChart.rows.length === 0 ? (
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    {projectionScope === "you" && trajectoryYouAvailable === false
+                      ? "Post memorising progress to see your projection, or choose All."
+                      : "Not enough data for a chart yet."}
+                  </p>
                 ) : (
-                  <div className="h-full w-full min-h-[240px]">
+                  <div className="h-full w-full min-h-[260px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartRows} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                      <LineChart data={projectionChart.rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                        <XAxis dataKey="date" tick={{ fontSize: 10 }} className="text-zinc-500" />
-                        <YAxis domain={[0, 100]} width={36} tick={{ fontSize: 10 }} className="text-zinc-500" />
+                        <XAxis dataKey="date" tick={{ fontSize: 9 }} className="text-zinc-500" />
+                        <YAxis domain={[0, 100]} width={32} tick={{ fontSize: 9 }} className="text-zinc-500" />
                         <Tooltip
                           formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, ""]}
                           contentStyle={{
                             borderRadius: "0.75rem",
                             border: "1px solid rgb(228 228 231)",
-                            fontSize: "12px",
+                            fontSize: "11px",
                           }}
                         />
-                        <Legend wrapperStyle={{ fontSize: "12px" }} />
-                        <Line
-                          type="monotone"
-                          dataKey="recorded"
-                          name="Recorded %"
-                          stroke="#047857"
-                          strokeWidth={2}
-                          dot={{ r: 3 }}
-                          connectNulls
+                        <Legend
+                          wrapperStyle={{ fontSize: projectionScope === "all" ? "10px" : "12px" }}
+                          verticalAlign="bottom"
+                          height={projectionScope === "all" ? 56 : 36}
                         />
-                        <Line
-                          type="monotone"
-                          dataKey="forecast"
-                          name="Projection %"
-                          stroke="#10b981"
-                          strokeWidth={2}
-                          strokeDasharray="6 4"
-                          dot={false}
-                          connectNulls
-                        />
+                        {projectionChart.lines.map((ln) => (
+                          <Line
+                            key={ln.dataKey}
+                            type="monotone"
+                            dataKey={ln.dataKey}
+                            name={ln.name}
+                            stroke={ln.stroke}
+                            strokeWidth={projectionScope === "all" ? 1.75 : 2}
+                            strokeDasharray={ln.dashed ? "5 4" : undefined}
+                            dot={
+                              ln.dashed
+                                ? false
+                                : projectionScope === "you"
+                                  ? { r: 3 }
+                                  : { r: 2 }
+                            }
+                            connectNulls={!ln.dashed}
+                          />
+                        ))}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
