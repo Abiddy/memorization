@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildMemorizationTimeline } from "@/lib/progress-aggregate";
-import { percentQuranFromSurahIds, surahName } from "@/lib/quran";
+import { juzWhereSurahStarts, percentQuranFromSurahIds, surahName } from "@/lib/quran";
 
 type HeatmapActivity = "memorizing" | "revising" | "reciting";
 
@@ -84,10 +84,15 @@ function buildHeatmap(
   };
 }
 
-function formatSurahsCell(ids: number[]): string {
+function dashboardSurahEntries(ids: number[]): { juz: number; surahId: number; name: string }[] {
   const sorted = [...new Set(ids)].filter((n) => n >= 1 && n <= 114).sort((a, b) => a - b);
-  if (sorted.length === 0) return "—";
-  return sorted.map((id) => surahName(id)).join(", ");
+  const out: { juz: number; surahId: number; name: string }[] = [];
+  for (const surahId of sorted) {
+    const juz = juzWhereSurahStarts(surahId);
+    if (juz == null) continue;
+    out.push({ juz, surahId, name: surahName(surahId) });
+  }
+  return out;
 }
 
 export async function GET() {
@@ -156,9 +161,9 @@ export async function GET() {
     return {
       member_id: m.id,
       display_name: m.display_name,
-      revising: formatSurahsCell(mp?.revising_surahs ?? []),
-      memorising: formatSurahsCell(mp?.memorizing_surahs ?? []),
-      reciting: formatSurahsCell(mp?.reciting_surahs ?? []),
+      revising: dashboardSurahEntries(mp?.revising_surahs ?? []),
+      memorising: dashboardSurahEntries(mp?.memorizing_surahs ?? []),
+      reciting: dashboardSurahEntries(mp?.reciting_surahs ?? []),
       pct_quran: pctQuran,
     };
   });

@@ -69,6 +69,17 @@ export function uniqueSurahsInJuz(juz: number): number[] {
   return [...set].sort((a, b) => a - b);
 }
 
+/** Juz where this surah begins (ayah 1), 1–30. Long surahs span multiple juz; this is the opening juz. */
+export function juzWhereSurahStarts(surah: number): number | null {
+  if (surah < 1 || surah > 114) return null;
+  for (let j = 1; j <= 30; j++) {
+    for (const g of juzSegments(j)) {
+      if (g.surah === surah && g.from <= 1 && g.to >= 1) return j;
+    }
+  }
+  return null;
+}
+
 export function ayahsOfSurahWithinJuz(juz: number, surah: number): number {
   let n = 0;
   for (const g of juzSegments(juz)) {

@@ -4,6 +4,7 @@ export {
   juzSegments,
   totalAyahsInJuz,
   uniqueSurahsInJuz,
+  juzWhereSurahStarts,
   ayahsOfSurahWithinJuz,
   percentOfJuzFromSelectedSurahs,
   validateSurahsBelongToJuz,

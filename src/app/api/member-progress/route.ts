@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { formatProgressChatLine, formatProgressEventSummary } from "@/lib/quran";
+import { formatProgressChatLine, formatProgressEventSummary, surahName } from "@/lib/quran";
 
 const COOKIE = "alif_member_id";
 
@@ -31,14 +31,20 @@ const PostBodySchema = z.discriminatedUnion("track", [
   RecitingBodySchema,
 ]);
 
-/** Silent merge from Surah matrix (no chat message, no progress_events except memorising). */
+/** Matrix: merge surahs onto a track (add) or drop them from that track (remove). */
 const MatrixPatchSchema = z.object({
   track: z.enum(["memorizing", "revising", "reciting"]),
   surah_ids: z.array(z.number().int().min(1).max(114)).min(1),
+  action: z.enum(["add", "remove"]).optional().default("add"),
 });
 
 function mergeUniqueSorted(a: number[], b: number[]): number[] {
   return [...new Set([...a, ...b])].sort((x, y) => x - y);
+}
+
+function removeIdsFromSorted(base: number[], toRemove: number[]): number[] {
+  const drop = new Set(toRemove);
+  return base.filter((id) => !drop.has(id));
 }
 
 type MemberProgressRow = {
@@ -223,17 +229,27 @@ export async function PATCH(request: Request) {
     reciting_surahs: (existing?.reciting_surahs as number[] | null) ?? [],
   };
 
-  const { track, surah_ids } = parsed.data;
+  const { track, surah_ids, action } = parsed.data;
   const incoming = [...new Set(surah_ids)];
 
   const nextRow: MemberProgressRow = { ...base };
 
-  if (track === "memorizing") {
-    nextRow.memorizing_surahs = mergeUniqueSorted(base.memorizing_surahs, incoming);
-  } else if (track === "revising") {
-    nextRow.revising_surahs = mergeUniqueSorted(base.revising_surahs ?? [], incoming);
+  if (action === "add") {
+    if (track === "memorizing") {
+      nextRow.memorizing_surahs = mergeUniqueSorted(base.memorizing_surahs, incoming);
+    } else if (track === "revising") {
+      nextRow.revising_surahs = mergeUniqueSorted(base.revising_surahs ?? [], incoming);
+    } else {
+      nextRow.reciting_surahs = mergeUniqueSorted(base.reciting_surahs ?? [], incoming);
+    }
   } else {
-    nextRow.reciting_surahs = mergeUniqueSorted(base.reciting_surahs ?? [], incoming);
+    if (track === "memorizing") {
+      nextRow.memorizing_surahs = removeIdsFromSorted(base.memorizing_surahs, incoming);
+    } else if (track === "revising") {
+      nextRow.revising_surahs = removeIdsFromSorted(base.revising_surahs ?? [], incoming);
+    } else {
+      nextRow.reciting_surahs = removeIdsFromSorted(base.reciting_surahs ?? [], incoming);
+    }
   }
 
   const { error: upError } = await admin
@@ -252,18 +268,26 @@ export async function PATCH(request: Request) {
 
   if (track === "memorizing") {
     const prev = (member.memorized_surah_ids as number[] | null) ?? [];
-    const mergedMem = mergeUniqueSorted(prev, incoming);
+    const mergedMem =
+      action === "add"
+        ? mergeUniqueSorted(prev, incoming)
+        : removeIdsFromSorted(prev, incoming);
     const { error: memUp } = await admin.from("members").update({ memorized_surah_ids: mergedMem }).eq("id", member.id);
     if (memUp) {
       return NextResponse.json({ error: memUp.message }, { status: 500 });
     }
 
-    const summary = `${formatProgressEventSummary("memorizing", incoming)} (matrix)`;
+    const sortedIncoming = [...incoming].sort((a, b) => a - b);
+    const sortedIds = sortedIncoming.join(",");
+    const summary =
+      action === "add"
+        ? `${formatProgressEventSummary("memorizing", incoming)} (matrix)`
+        : `Removed from memorising (matrix): ${sortedIncoming.map((id) => surahName(id)).join(", ")}`;
     const { error: peError } = await admin.from("progress_events").insert({
       member_id: member.id,
       event_kind: "memorizing",
       juz: null,
-      surah: incoming.sort((a, b) => a - b).join(","),
+      surah: sortedIds,
       summary,
       source_message_id: null,
     });

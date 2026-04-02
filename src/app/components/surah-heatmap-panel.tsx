@@ -87,21 +87,36 @@ function IconCheck({ className }: { className?: string }) {
   );
 }
 
+function IconInfo({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M12 16v-4M12 8h.01"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function MatrixFloatingBar({
   matrixTrack,
   setMatrixTrack,
   selectedCount,
-  saving,
+  pending,
   onSave,
-  onClear,
+  onRemove,
   errorMsg,
 }: {
   matrixTrack: MatrixTrack;
   setMatrixTrack: (t: MatrixTrack) => void;
   selectedCount: number;
-  saving: boolean;
+  pending: false | "add" | "remove";
   onSave: () => void;
-  onClear: () => void;
+  /** Remove selected surahs from the track chosen in the dropdown (server sync). */
+  onRemove: () => void;
   errorMsg: string | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -130,7 +145,7 @@ function MatrixFloatingBar({
     <div
       className="pointer-events-none fixed inset-x-0 top-0 z-[200] flex justify-center px-4 pt-[max(0.75rem,env(safe-area-inset-top))]"
       role="dialog"
-      aria-label="Save matrix selection"
+      aria-label="Matrix track actions"
     >
       <div className="pointer-events-auto mt-12 flex max-w-[calc(100vw-2rem)] flex-col items-center gap-2 sm:mt-14">
         <div className="matrix-save-bar-enter flex flex-wrap items-center justify-center gap-x-2 gap-y-2 rounded-full border border-zinc-200/90 bg-white py-2 pl-3 pr-2 shadow-2xl ring-1 ring-black/5 dark:border-zinc-300 dark:bg-white dark:ring-black/10">
@@ -190,18 +205,18 @@ function MatrixFloatingBar({
           <button
             type="button"
             onClick={onSave}
-            disabled={saving || selectedCount === 0}
+            disabled={pending !== false || selectedCount === 0}
             className={`rounded-full px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${trackUi.save} ${trackUi.saveHover}`}
           >
-            {saving ? "Saving…" : "Save"}
+            {pending === "add" ? "Saving…" : "Save"}
           </button>
           <button
             type="button"
-            onClick={onClear}
-            disabled={selectedCount === 0}
-            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={onRemove}
+            disabled={pending !== false || selectedCount === 0}
+            className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-300/60 dark:bg-white dark:text-red-700 dark:hover:bg-red-50"
           >
-            Clear
+            {pending === "remove" ? "Removing…" : "Remove"}
           </button>
         </div>
         {errorMsg ? (
@@ -401,13 +416,33 @@ export function SurahHeatmapPanel({
 
   const [selectedSurahs, setSelectedSurahs] = useState<Set<number>>(() => new Set());
   const [matrixTrack, setMatrixTrack] = useState<MatrixTrack>("memorizing");
-  const [saving, setSaving] = useState(false);
+  const [matrixPending, setMatrixPending] = useState<false | "add" | "remove">(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [portalReady, setPortalReady] = useState(false);
+  const [matrixHelpOpen, setMatrixHelpOpen] = useState(false);
+  const matrixHelpRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPortalReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!matrixHelpOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (matrixHelpRef.current && !matrixHelpRef.current.contains(e.target as Node)) {
+        setMatrixHelpOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMatrixHelpOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [matrixHelpOpen]);
 
   const empty = rows.length === 0;
   const showFloatingBar = Boolean(currentMemberId && selectedSurahs.size > 0);
@@ -429,7 +464,7 @@ export function SurahHeatmapPanel({
 
   const saveMatrix = useCallback(async () => {
     if (!currentMemberId || selectedSurahs.size === 0) return;
-    setSaving(true);
+    setMatrixPending("add");
     setErrorMsg(null);
     try {
       const res = await fetch("/api/member-progress", {
@@ -437,6 +472,7 @@ export function SurahHeatmapPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           track: matrixTrack,
+          action: "add",
           surah_ids: [...selectedSurahs].sort((a, b) => a - b),
         }),
       });
@@ -448,7 +484,33 @@ export function SurahHeatmapPanel({
       clearSelection();
       onSaved?.();
     } finally {
-      setSaving(false);
+      setMatrixPending(false);
+    }
+  }, [currentMemberId, matrixTrack, selectedSurahs, clearSelection, onSaved]);
+
+  const removeMatrix = useCallback(async () => {
+    if (!currentMemberId || selectedSurahs.size === 0) return;
+    setMatrixPending("remove");
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/member-progress", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          track: matrixTrack,
+          action: "remove",
+          surah_ids: [...selectedSurahs].sort((a, b) => a - b),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setErrorMsg(data.error ?? "Could not remove");
+        return;
+      }
+      clearSelection();
+      onSaved?.();
+    } finally {
+      setMatrixPending(false);
     }
   }, [currentMemberId, matrixTrack, selectedSurahs, clearSelection, onSaved]);
 
@@ -468,9 +530,9 @@ export function SurahHeatmapPanel({
             matrixTrack={matrixTrack}
             setMatrixTrack={setMatrixTrack}
             selectedCount={selectedSurahs.size}
-            saving={saving}
+            pending={matrixPending}
             onSave={() => void saveMatrix()}
-            onClear={clearSelection}
+            onRemove={() => void removeMatrix()}
             errorMsg={errorMsg}
           />,
           document.body
@@ -482,19 +544,51 @@ export function SurahHeatmapPanel({
       {floatingEditor}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200/90 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/30">
         <div className="shrink-0 border-b border-zinc-100 px-4 py-4 dark:border-zinc-800">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-1">
               <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
                 Surah matrix
               </h2>
-              <p className="mt-1 max-w-xl text-sm text-zinc-500 dark:text-zinc-400">
-                Columns are surah names. Stacked badges:{" "}
-                <span className="font-medium text-emerald-700 dark:text-emerald-400">M</span> memorising,{" "}
-                <span className="font-medium text-indigo-700 dark:text-indigo-400">R</span> revising,{" "}
-                <span className="font-medium text-amber-700 dark:text-amber-400">C</span> reciting. Tap cells in your
-                row to select; a bar appears at the top to choose track and save.
-              </p>
+              <div ref={matrixHelpRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMatrixHelpOpen((o) => !o)}
+                  className="rounded-full p-1 text-zinc-400 outline-none transition hover:bg-zinc-100 hover:text-zinc-600 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:hover:bg-zinc-800 dark:hover:text-zinc-300 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950"
+                  aria-expanded={matrixHelpOpen}
+                  aria-controls="surah-matrix-help"
+                  id="surah-matrix-help-trigger"
+                >
+                  <IconInfo className="h-5 w-5" />
+                  <span className="sr-only">How the Surah matrix works</span>
+                </button>
+                {matrixHelpOpen ? (
+                  <div
+                    id="surah-matrix-help"
+                    role="region"
+                    aria-labelledby="surah-matrix-help-trigger"
+                    className="absolute left-0 top-[calc(100%+0.375rem)] z-50 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-zinc-200 bg-white p-3 text-left text-sm leading-snug text-zinc-600 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                  >
+                    <p>
+                      Columns are surah names. Tap your row to select; pick a track, then{" "}
+                      <span className="font-medium text-zinc-800 dark:text-zinc-100">Save</span> to add or{" "}
+                      <span className="font-medium text-zinc-800 dark:text-zinc-100">Remove</span> to drop those surahs
+                      from that track.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             </div>
+            <p className="max-w-[min(16rem,42vw)] shrink-0 text-right text-[11px] leading-snug text-zinc-500 sm:max-w-none sm:text-xs dark:text-zinc-400">
+              <span className="font-semibold text-emerald-600 dark:text-emerald-400">M</span> memorising
+              <span className="mx-1 text-zinc-400 dark:text-zinc-600" aria-hidden>
+                ·
+              </span>
+              <span className="font-semibold text-indigo-600 dark:text-indigo-400">R</span> revising
+              <span className="mx-1 text-zinc-400 dark:text-zinc-600" aria-hidden>
+                ·
+              </span>
+              <span className="font-semibold text-amber-600 dark:text-amber-400">C</span> reciting
+            </p>
           </div>
         </div>
 
