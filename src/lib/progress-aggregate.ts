@@ -17,14 +17,15 @@ export type ProjectionPoint = {
   projected: true;
 };
 
+/** Distinct surahs logged under memorising by this calendar day (cumulative set size). */
 export type MemberSeriesPoint = {
   date: string;
-  pct: number;
+  surahs: number;
 };
 
 export type MemberProjectionPoint = {
   date: string;
-  pct: number;
+  surahs: number;
   projected: true;
 };
 
@@ -86,10 +87,13 @@ function clubMaxPctQuran(memorizedByMember: Map<string, Set<number>>, memberIds:
   return max;
 }
 
+type ProjectionClamp = { min: number; max: number; roundToInt?: boolean };
+
 function projectionFromSeries<T extends { date: string }>(
   points: T[],
-  getY: (p: T) => number
-): { date: string; pct: number; projected: true }[] {
+  getY: (p: T) => number,
+  clamp: ProjectionClamp
+): { date: string; value: number; projected: true }[] {
   if (points.length < 2) return [];
   const take = points.slice(-14);
   const xs = take.map((_, i) => i);
@@ -97,16 +101,17 @@ function projectionFromSeries<T extends { date: string }>(
   const { slope, intercept } = linearRegression(xs, ys);
   const lastDay = new Date(`${take[take.length - 1]!.date}T00:00:00.000Z`);
   const startIndex = take.length;
-  const out: { date: string; pct: number; projected: true }[] = [];
+  const out: { date: string; value: number; projected: true }[] = [];
   for (let k = 1; k <= 10; k++) {
     const t = startIndex + k - 1;
     let y = slope * t + intercept;
-    y = Math.min(100, Math.max(0, y));
+    y = Math.min(clamp.max, Math.max(clamp.min, y));
     const d = new Date(lastDay);
     d.setUTCDate(d.getUTCDate() + k);
+    const value = clamp.roundToInt ? Math.round(y) : Math.round(y * 10) / 10;
     out.push({
       date: d.toISOString().slice(0, 10),
-      pct: Math.round(y * 10) / 10,
+      value,
       projected: true,
     });
   }
@@ -129,14 +134,8 @@ export function buildMemorizationTimeline(events: EventRow[]): {
   const nameByMember = new Map<string, string>();
   const memorizedByMember = new Map<string, Set<number>>();
   const dayToClubPct = new Map<string, number>();
-  /** memberId -> day -> max % that calendar day (from their memorising posts). */
-  const memberDayToPct = new Map<string, Map<string, number>>();
-
-  function memberPct(memberId: string): number {
-    const set = memorizedByMember.get(memberId);
-    if (!set || set.size === 0) return 0;
-    return percentQuranFromSurahIds([...set]);
-  }
+  /** memberId -> day -> max distinct memorised surah count that calendar day. */
+  const memberDayToSurahs = new Map<string, Map<string, number>>();
 
   for (const e of sorted) {
     nameByMember.set(e.member_id, e.display_name);
@@ -151,14 +150,14 @@ export function buildMemorizationTimeline(events: EventRow[]): {
         for (const id of ids) set.add(id);
 
         const day = dayKey(e.created_at);
-        let dayMap = memberDayToPct.get(e.member_id);
+        let dayMap = memberDayToSurahs.get(e.member_id);
         if (!dayMap) {
           dayMap = new Map();
-          memberDayToPct.set(e.member_id, dayMap);
+          memberDayToSurahs.set(e.member_id, dayMap);
         }
-        const p = memberPct(e.member_id);
+        const count = set.size;
         const prevM = dayMap.get(day) ?? 0;
-        dayMap.set(day, Math.max(prevM, p));
+        dayMap.set(day, Math.max(prevM, count));
       }
     }
     const day = dayKey(e.created_at);
@@ -173,22 +172,32 @@ export function buildMemorizationTimeline(events: EventRow[]): {
 
   const projection: ProjectionPoint[] =
     clubSeries.length >= 2
-      ? projectionFromSeries(clubSeries, (p) => p.clubPct).map((p) => ({
+      ? projectionFromSeries(clubSeries, (p) => p.clubPct, { min: 0, max: 100 }).map((p) => ({
           date: p.date,
-          clubPct: p.pct,
+          clubPct: p.value,
           projected: true,
         }))
       : [];
 
   const memberTrajectories: MemberTrajectory[] = [];
   for (const [memberId, displayName] of nameByMember) {
-    const dayMap = memberDayToPct.get(memberId);
+    const dayMap = memberDayToSurahs.get(memberId);
     if (!dayMap || dayMap.size === 0) continue;
     const recorded: MemberSeriesPoint[] = Array.from(dayMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, pct]) => ({ date, pct }));
-    const memberProj =
-      recorded.length >= 2 ? projectionFromSeries(recorded, (p) => p.pct) : [];
+      .map(([date, surahs]) => ({ date, surahs }));
+    const memberProj: MemberProjectionPoint[] =
+      recorded.length >= 2
+        ? projectionFromSeries(recorded, (p) => p.surahs, {
+            min: 0,
+            max: 114,
+            roundToInt: true,
+          }).map((p) => ({
+            date: p.date,
+            surahs: p.value,
+            projected: true,
+          }))
+        : [];
     memberTrajectories.push({
       member_id: memberId,
       display_name: displayName,

@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Alif Laam Meem — Memorisation club",
-  description: "Group chat and Quran memorisation progress for your circle.",
+  description: "Your suhbah — Quran memorisation progress and chat for your circle.",
   icons: {
-    icon: [{ url: "/icon.png", type: "image/png", sizes: "32x32" }],
-    shortcut: "/icon.png",
-    apple: "/apple-icon.png",
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
   },
 };
 

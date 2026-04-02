@@ -6,7 +6,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -22,6 +21,7 @@ import {
   SurahMatrixHelpButton,
   type HeatmapPayload,
 } from "@/app/components/surah-heatmap-panel";
+import { IconTrackMemorising, IconTrackReciting, IconTrackRevising } from "@/app/components/track-activity-icons";
 import type { MemberTrajectory } from "@/lib/progress-aggregate";
 
 type MessageRow = {
@@ -97,12 +97,12 @@ function ClubBrandTitle() {
   return (
     <div className="flex items-center gap-2">
       <Image
-        src="/icon.png"
+        src="/icon.svg"
         alt=""
         width={24}
         height={24}
         sizes="24px"
-        className="h-6 w-6 shrink-0 rounded object-contain"
+        className="h-6 w-6 shrink-0 object-contain dark:opacity-90"
         priority
         aria-hidden
       />
@@ -120,7 +120,7 @@ const NAV: {
 }[] = [
   {
     id: "chat",
-    label: "Group chat",
+    label: "Your Suhbah",
     Icon: function IconChat({ className }: { className?: string }) {
       return (
         <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -216,7 +216,7 @@ function formatMessageBody(text: string): ReactNode {
 function panelTitle(p: MainPanel): string {
   switch (p) {
     case "chat":
-      return "Group chat";
+      return "Your Suhbah";
     case "focus":
       return "Current focus";
     case "heatmap":
@@ -341,18 +341,81 @@ const TRAJECTORY_PALETTE = [
   "#9333ea",
 ];
 
-function lastRecordedPctUpTo(series: { date: string; pct: number }[], d: string): number | undefined {
+const SURAH_CHART_MAX = 114;
+const SURAH_Y_TICKS = [0, 19, 38, 57, 76, 95, 114];
+
+function lastRecordedSurahsUpTo(series: { date: string; surahs: number }[], d: string): number | undefined {
   let v: number | undefined;
   for (const p of series) {
-    if (p.date <= d) v = p.pct;
+    if (p.date <= d) v = p.surahs;
     else break;
   }
   return v;
 }
 
-function shortLegendName(name: string, max = 9): string {
-  const t = name.trim();
-  return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
+/** YYYY-MM-DD for “today” in UTC — matches stored progress day keys. */
+function utcTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** First day of each of the next `count` calendar months after `lastIso`’s month. */
+function futureMonthStartDates(lastIso: string, count: number): string[] {
+  const y = Number(lastIso.slice(0, 4));
+  const m = Number(lastIso.slice(5, 7));
+  if (!y || !m) return [];
+  const out: string[] = [];
+  let yy = y;
+  let mm = m;
+  for (let i = 0; i < count; i++) {
+    mm += 1;
+    if (mm > 12) {
+      mm = 1;
+      yy += 1;
+    }
+    out.push(`${String(yy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-01`);
+  }
+  return out;
+}
+
+function mergeProjectionDates(sortedDataDates: string[], futureMonthCount: number): string[] {
+  if (sortedDataDates.length === 0) return sortedDataDates;
+  const set = new Set(sortedDataDates);
+  const last = sortedDataDates[sortedDataDates.length - 1]!;
+  for (const d of futureMonthStartDates(last, futureMonthCount)) set.add(d);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function pickXAxisTicks(sortedDates: string[]): string[] {
+  if (sortedDates.length === 0) return [];
+  if (sortedDates.length === 1) return sortedDates;
+  const distinctMonths = new Set(sortedDates.map((x) => x.slice(0, 7)));
+  if (distinctMonths.size >= 2) {
+    const firstInMonth = new Map<string, string>();
+    for (const x of sortedDates) {
+      const ym = x.slice(0, 7);
+      if (!firstInMonth.has(ym)) firstInMonth.set(ym, x);
+    }
+    return [...firstInMonth.values()].sort((a, b) => a.localeCompare(b));
+  }
+  const step = Math.max(1, Math.ceil(sortedDates.length / 5));
+  const out: string[] = [];
+  for (let i = 0; i < sortedDates.length; i += step) out.push(sortedDates[i]!);
+  const last = sortedDates[sortedDates.length - 1]!;
+  if (out[out.length - 1] !== last) out.push(last);
+  return out;
+}
+
+function formatTrajectoryXAxis(iso: string, sortedDates: string[]): string {
+  try {
+    const multiMonth = new Set(sortedDates.map((d) => d.slice(0, 7))).size > 1;
+    const d = new Date(`${iso}T00:00:00.000Z`);
+    if (multiMonth) {
+      return new Intl.DateTimeFormat(undefined, { month: "short", timeZone: "UTC" }).format(d);
+    }
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
+  } catch {
+    return iso;
+  }
 }
 
 type TrajectoryLineSpec = {
@@ -365,20 +428,28 @@ type TrajectoryLineSpec = {
 function buildProjectionChart(
   trajs: MemberTrajectory[],
   scope: "you" | "all",
-  selfId: string | undefined
-): { rows: Record<string, string | number | undefined>[]; lines: TrajectoryLineSpec[] } {
-  if (trajs.length === 0) return { rows: [], lines: [] };
+  selfId: string | undefined,
+  asOfDate: string
+): {
+  rows: Record<string, string | number | undefined>[];
+  lines: TrajectoryLineSpec[];
+  sortedDates: string[];
+  xTicks: string[];
+} {
+  if (trajs.length === 0) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
 
   if (scope === "you") {
     const self = selfId ? trajs.find((t) => t.member_id === selfId) : undefined;
-    if (!self) return { rows: [], lines: [] };
+    if (!self) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
     const dateSet = new Set<string>();
     for (const p of self.recorded) dateSet.add(p.date);
     for (const p of self.projection) dateSet.add(p.date);
-    const dates = [...dateSet].sort((a, b) => a.localeCompare(b));
+    const rawDates = [...dateSet].sort((a, b) => a.localeCompare(b));
+    const dates = mergeProjectionDates(rawDates, 6);
     const rows = dates.map((date) => {
-      const recorded = lastRecordedPctUpTo(self.recorded, date);
-      const forecast = self.projection.find((p) => p.date === date)?.pct;
+      let recorded = lastRecordedSurahsUpTo(self.recorded, date);
+      if (recorded !== undefined && date > asOfDate) recorded = undefined;
+      const forecast = self.projection.find((p) => p.date === date)?.surahs;
       return {
         date,
         ...(recorded !== undefined ? { recorded } : {}),
@@ -388,9 +459,11 @@ function buildProjectionChart(
     return {
       rows,
       lines: [
-        { dataKey: "recorded", name: "Recorded %", stroke: "#047857" },
-        { dataKey: "forecast", name: "Projection %", stroke: "#10b981", dashed: true },
+        { dataKey: "recorded", name: "Recorded", stroke: "#047857" },
+        { dataKey: "forecast", name: "Projected", stroke: "#10b981", dashed: true },
       ],
+      sortedDates: dates,
+      xTicks: pickXAxisTicks(dates),
     };
   }
 
@@ -401,13 +474,15 @@ function buildProjectionChart(
     for (const p of t.recorded) dateSet.add(p.date);
     for (const p of t.projection) dateSet.add(p.date);
   }
-  const dates = [...dateSet].sort((a, b) => a.localeCompare(b));
+  const rawDates = [...dateSet].sort((a, b) => a.localeCompare(b));
+  const dates = mergeProjectionDates(rawDates, 6);
   const rows = dates.map((date) => {
     const row: Record<string, string | number | undefined> = { date };
     for (const t of trajs) {
-      const rec = lastRecordedPctUpTo(t.recorded, date);
+      let rec = lastRecordedSurahsUpTo(t.recorded, date);
+      if (rec !== undefined && date > asOfDate) rec = undefined;
       if (rec !== undefined) row[`rec_${t.member_id}`] = rec;
-      const prj = t.projection.find((p) => p.date === date)?.pct;
+      const prj = t.projection.find((p) => p.date === date)?.surahs;
       if (prj !== undefined) row[`prj_${t.member_id}`] = prj;
     }
     return row;
@@ -417,13 +492,12 @@ function buildProjectionChart(
   for (const t of trajsSorted) {
     const stroke =
       TRAJECTORY_PALETTE[sortedIds.indexOf(t.member_id) % TRAJECTORY_PALETTE.length] ?? "#047857";
-    const base = shortLegendName(t.display_name);
     lines.push(
-      { dataKey: `rec_${t.member_id}`, name: `${base} · rec`, stroke },
-      { dataKey: `prj_${t.member_id}`, name: `${base} · proj`, stroke, dashed: true }
+      { dataKey: `rec_${t.member_id}`, name: `${t.display_name} · recorded`, stroke },
+      { dataKey: `prj_${t.member_id}`, name: `${t.display_name} · projected`, stroke, dashed: true }
     );
   }
-  return { rows, lines };
+  return { rows, lines, sortedDates: dates, xTicks: pickXAxisTicks(dates) };
 }
 
 function ProjectionsScopeToggle({
@@ -470,7 +544,21 @@ function ProjectionsScopeToggle({
   );
 }
 
-function IconUserPlus({ className }: { className?: string }) {
+function IconChevronDownSm({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 9l6 6 6-6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconGroupLink({ className }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -479,66 +567,76 @@ function IconUserPlus({ className }: { className?: string }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.75"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
     >
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <line x1="19" y1="8" x2="19" y2="14" />
-      <line x1="22" y1="11" x2="16" y2="11" />
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   );
 }
 
-/** Overlapping avatars + invite (copy link), Chat / Slack style */
+/** Compact overlapping avatars in the header; opens a popover with full roster + copy group link. */
 function GroupMemberStack({
   members,
-  onInviteClick,
+  currentMemberId,
+  onCopyGroupLink,
   inviteCopied,
-  variant = "default",
   className = "",
 }: {
   members: MemberBrief[];
-  onInviteClick: () => void;
+  currentMemberId: string;
+  onCopyGroupLink: () => void;
   inviteCopied: boolean;
-  variant?: "default" | "toolbar";
   className?: string;
 }) {
-  const toolbar = variant === "toolbar";
-  const overlap = toolbar ? "-ml-2" : "-ml-2.5";
-  const faceClass = toolbar
-    ? "flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-zinc-800 ring-2 ring-white dark:text-zinc-100 dark:ring-zinc-950"
-    : "flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-zinc-800 ring-2 ring-white dark:text-zinc-100 dark:ring-zinc-950";
-  const overflowClass = toolbar
-    ? "flex h-9 w-9 items-center justify-center rounded-full bg-zinc-300 text-[10px] font-bold tabular-nums text-zinc-800 ring-2 ring-white dark:bg-zinc-600 dark:text-zinc-100 dark:ring-zinc-950"
-    : "flex h-9 w-9 items-center justify-center rounded-full bg-zinc-300 text-[10px] font-bold tabular-nums text-zinc-800 ring-2 ring-white dark:bg-zinc-600 dark:text-zinc-100 dark:ring-zinc-950";
-  const inviteBtnClass = toolbar
-    ? "flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 text-white ring-2 ring-white transition hover:bg-violet-700 dark:ring-zinc-950 dark:hover:bg-violet-500"
-    : "flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 text-white ring-2 ring-white transition hover:bg-violet-700 dark:ring-zinc-950 dark:hover:bg-violet-500";
-  const iconClass = "h-[18px] w-[18px]";
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
-  const visibleSlots = 8;
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const overlap = "-ml-1.5";
+  const faceClass =
+    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold leading-none text-zinc-800 ring-1 ring-white dark:text-zinc-100 dark:ring-zinc-950 sm:h-7 sm:w-7 sm:text-[11px]";
+  const overflowClass =
+    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-[9px] font-bold tabular-nums leading-none text-zinc-800 ring-1 ring-white dark:bg-zinc-600 dark:text-zinc-100 dark:ring-zinc-950 sm:h-7 sm:w-7 sm:text-[10px]";
+
+  const triggerSlots = 4;
   let faces: MemberBrief[];
   let overflow = 0;
-  if (members.length <= visibleSlots) {
+  if (members.length <= triggerSlots) {
     faces = members;
   } else {
-    overflow = members.length - (visibleSlots - 1);
-    faces = members.slice(0, visibleSlots - 1);
+    overflow = members.length - (triggerSlots - 1);
+    faces = members.slice(0, triggerSlots - 1);
   }
 
-  const items: ReactNode[] = [];
+  const triggerFaces: ReactNode[] = [];
   let z = 1;
   faces.forEach((m, i) => {
     const initial = m.display_name.trim().slice(0, 1).toUpperCase() || "?";
-    items.push(
+    triggerFaces.push(
       <li
         key={m.id}
         className={i === 0 ? "relative" : `relative ${overlap}`}
         style={{ zIndex: z++ }}
-        title={m.display_name}
+        aria-hidden
       >
         <div className={faceClass} style={{ backgroundColor: avatarBackground(m.display_name) }}>
           {initial}
@@ -547,55 +645,96 @@ function GroupMemberStack({
     );
   });
   if (overflow > 0) {
-    items.push(
+    triggerFaces.push(
       <li
         key="overflow"
-        className={items.length === 0 ? "relative" : `relative ${overlap}`}
+        className={triggerFaces.length === 0 ? "relative" : `relative ${overlap}`}
         style={{ zIndex: z++ }}
-        title={`${overflow} more ${overflow === 1 ? "member" : "members"}`}
+        aria-hidden
       >
         <div className={overflowClass}>+{overflow}</div>
       </li>
     );
   }
-  items.push(
-    <li
-      key="invite"
-      className={items.length === 0 ? "relative" : `relative ${overlap}`}
-      style={{ zIndex: z }}
-    >
-      <button
-        type="button"
-        onClick={onInviteClick}
-        title={
-          inviteCopied
-            ? "Invite link copied"
-            : "Copy invite link — friends open it and enter their name to join"
-        }
-        className={inviteBtnClass}
-      >
-        <IconUserPlus className={iconClass} />
-      </button>
-    </li>
-  );
 
   return (
-    <div
-      className={`flex min-w-0 items-center ${toolbar ? "shrink-0 justify-end gap-2" : "flex-wrap gap-3"} ${className}`}
-    >
+    <div ref={wrapRef} className={`relative shrink-0 ${className}`}>
       <span className="sr-only">
-        {members.length} {members.length === 1 ? "person" : "people"} in this memorisation group
+        {members.length} {members.length === 1 ? "person" : "people"} in this group. Open menu for full list and
+        invite link.
       </span>
-      <ul className="flex flex-row items-center" role="list">
-        {items}
-      </ul>
-      {inviteCopied && !toolbar ? (
-        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Invite link copied</span>
-      ) : null}
-      {inviteCopied && toolbar ? (
-        <span className="sr-only" role="status">
-          Invite link copied
-        </span>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls="group-members-popover"
+        className="flex min-w-0 max-w-full items-center gap-0.5 rounded-lg py-1 pl-1 pr-1 outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950 sm:gap-1 sm:pl-1.5 sm:pr-1.5"
+      >
+        <ul className="flex flex-row items-center pr-0.5" role="presentation">
+          {triggerFaces.length > 0 ? (
+            triggerFaces
+          ) : (
+            <li className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">No members</li>
+          )}
+        </ul>
+        <IconChevronDownSm className="shrink-0 text-zinc-400 dark:text-zinc-500" />
+      </button>
+
+      {open ? (
+        <div
+          id="group-members-popover"
+          role="dialog"
+          aria-label="Group members"
+          className="absolute right-0 top-[calc(100%+0.375rem)] z-[80] w-[min(17.5rem,calc(100vw-1.25rem))] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-700">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Group link</span>
+            <button
+              type="button"
+              onClick={() => onCopyGroupLink()}
+              className="flex shrink-0 items-center justify-center rounded-lg p-2 text-violet-600 transition hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/50"
+              title={inviteCopied ? "Link copied" : "Copy site link to share"}
+            >
+              <IconGroupLink className="h-5 w-5" />
+              <span className="sr-only">Copy group link</span>
+            </button>
+          </div>
+          {inviteCopied ? (
+            <p className="border-b border-zinc-100 px-3 py-2 text-xs font-medium text-emerald-600 dark:border-zinc-800 dark:text-emerald-400">
+              Link copied — share it with friends
+            </p>
+          ) : null}
+          <ul
+            className="max-h-[min(50vh,18rem)] overflow-y-auto py-1.5"
+            role="list"
+          >
+            {members.length === 0 ? (
+              <li className="px-3 py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">No members yet.</li>
+            ) : (
+              members.map((m) => {
+                const initial = m.display_name.trim().slice(0, 1).toUpperCase() || "?";
+                const you = m.id === currentMemberId;
+                return (
+                  <li key={m.id} className="flex items-center gap-2.5 px-3 py-2">
+                    <div
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-zinc-800 dark:text-zinc-100"
+                      style={{ backgroundColor: avatarBackground(m.display_name) }}
+                    >
+                      {initial}
+                    </div>
+                    <span className="min-w-0 flex-1 truncate text-sm text-zinc-900 dark:text-zinc-100">
+                      {m.display_name}
+                      {you ? (
+                        <span className="ml-1 font-normal text-zinc-500 dark:text-zinc-400">(You)</span>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
       ) : null}
     </div>
   );
@@ -745,15 +884,15 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     }
   }, [mobileNavOpen]);
 
-  const projectionChart = useMemo(
-    () =>
-      buildProjectionChart(
-        progress?.memberTrajectories ?? [],
-        projectionScope,
-        memberId ?? undefined
-      ),
-    [progress?.memberTrajectories, projectionScope, memberId]
-  );
+  const projectionChart = useMemo(() => {
+    const asOf = utcTodayIso();
+    return buildProjectionChart(
+      progress?.memberTrajectories ?? [],
+      projectionScope,
+      memberId ?? undefined,
+      asOf
+    );
+  }, [progress?.memberTrajectories, projectionScope, memberId]);
 
   const trajectoryYouAvailable = useMemo(() => {
     if (!memberId || !progress?.memberTrajectories?.length) return false;
@@ -917,9 +1056,9 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             />
           ) : (
             <GroupMemberStack
-              variant="toolbar"
               members={groupMembers}
-              onInviteClick={copyInviteLink}
+              currentMemberId={memberId}
+              onCopyGroupLink={copyInviteLink}
               inviteCopied={inviteCopied}
             />
           )}
@@ -1027,9 +1166,24 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   <thead className="sticky top-0 bg-zinc-100/95 text-[10px] font-medium uppercase tracking-wide text-zinc-500 backdrop-blur-sm dark:bg-zinc-800/95 dark:text-zinc-400 lg:text-xs">
                     <tr>
                       <th className="px-2 py-2 lg:px-4 lg:py-3">Name</th>
-                      <th className="px-2 py-2 lg:px-4 lg:py-3">Revising</th>
-                      <th className="px-2 py-2 lg:px-4 lg:py-3">Memorising</th>
-                      <th className="px-2 py-2 lg:px-4 lg:py-3">Reciting</th>
+                      <th className="px-2 py-2 lg:px-4 lg:py-3">
+                        <span className="inline-flex items-center gap-1.5">
+                          <IconTrackRevising className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-400 lg:h-4 lg:w-4" />
+                          Revising
+                        </span>
+                      </th>
+                      <th className="px-2 py-2 lg:px-4 lg:py-3">
+                        <span className="inline-flex items-center gap-1.5">
+                          <IconTrackMemorising className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400 lg:h-4 lg:w-4" />
+                          Memorising
+                        </span>
+                      </th>
+                      <th className="px-2 py-2 lg:px-4 lg:py-3">
+                        <span className="inline-flex items-center gap-1.5">
+                          <IconTrackReciting className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400 lg:h-4 lg:w-4" />
+                          Reciting
+                        </span>
+                      </th>
                       <th className="px-2 py-2 text-right lg:px-4 lg:py-3">% Quran</th>
                     </tr>
                   </thead>
@@ -1079,15 +1233,16 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           ) : null}
 
           {panel === "trajectory" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
-              <div className="mx-auto hidden w-full max-w-3xl shrink-0 lg:block">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">You</span> shows your % Quran from memorising
-                  posts; <span className="font-medium text-zinc-600 dark:text-zinc-300">All</span> overlays everyone in
-                  different colours. Dashed segments are illustrative projections from recent trend.
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white px-5 py-8 sm:px-8 sm:py-10 dark:bg-zinc-950">
+              <div className="mx-auto hidden w-full max-w-4xl shrink-0 lg:block">
+                <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">You</span> shows distinct surahs logged under
+                  memorising by day; <span className="font-medium text-zinc-600 dark:text-zinc-300">All</span> overlays
+                  everyone in different colours. Solid lines are recorded; dashed lines are illustrative projections from
+                  recent trend (0–114 surahs).
                 </p>
               </div>
-              <div className="mx-auto mt-0 w-full max-w-3xl min-h-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 dark:border-zinc-800 dark:bg-zinc-900/40 lg:mt-6">
+              <div className="mx-auto mt-0 w-full max-w-4xl min-h-0 flex-1 lg:mt-8">
                 {projectionChart.rows.length === 0 ? (
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">
                     {projectionScope === "you" && trajectoryYouAvailable === false
@@ -1095,24 +1250,50 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                       : "Not enough data for a chart yet."}
                   </p>
                 ) : (
-                  <div className="h-full w-full min-h-[260px]">
+                  <div className="h-full w-full min-h-[280px] outline-none [&_.recharts-wrapper]:outline-none">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={projectionChart.rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                      <LineChart
+                        data={projectionChart.rows}
+                        margin={{ top: 12, right: 16, left: 4, bottom: 12 }}
+                        className="outline-none"
+                      >
                         <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                        <XAxis dataKey="date" tick={{ fontSize: 9 }} className="text-zinc-500" />
-                        <YAxis domain={[0, 100]} width={32} tick={{ fontSize: 9 }} className="text-zinc-500" />
+                        <XAxis
+                          dataKey="date"
+                          ticks={projectionChart.xTicks}
+                          tick={{ fontSize: 11 }}
+                          className="text-zinc-500"
+                          tickFormatter={(v) => formatTrajectoryXAxis(String(v), projectionChart.sortedDates)}
+                        />
+                        <YAxis
+                          domain={[0, SURAH_CHART_MAX]}
+                          ticks={SURAH_Y_TICKS}
+                          allowDecimals={false}
+                          width={40}
+                          tick={{ fontSize: 10 }}
+                          className="text-zinc-500"
+                        />
                         <Tooltip
-                          formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, ""]}
+                          cursor={false}
+                          formatter={(v) => {
+                            const n = typeof v === "number" ? v : Number(v) || 0;
+                            return [`${n} surah${n === 1 ? "" : "s"}`, ""];
+                          }}
+                          labelFormatter={(label) => {
+                            try {
+                              return new Intl.DateTimeFormat(undefined, {
+                                dateStyle: "medium",
+                                timeZone: "UTC",
+                              }).format(new Date(`${String(label)}T00:00:00.000Z`));
+                            } catch {
+                              return String(label);
+                            }
+                          }}
                           contentStyle={{
                             borderRadius: "0.75rem",
                             border: "1px solid rgb(228 228 231)",
                             fontSize: "11px",
                           }}
-                        />
-                        <Legend
-                          wrapperStyle={{ fontSize: projectionScope === "all" ? "10px" : "12px" }}
-                          verticalAlign="bottom"
-                          height={projectionScope === "all" ? 56 : 36}
                         />
                         {projectionChart.lines.map((ln) => (
                           <Line
@@ -1130,7 +1311,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                                   ? { r: 3 }
                                   : { r: 2 }
                             }
-                            connectNulls={!ln.dashed}
+                            activeDot={false}
+                            connectNulls={false}
                           />
                         ))}
                       </LineChart>

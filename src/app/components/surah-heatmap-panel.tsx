@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { surahName } from "@/lib/quran";
+import {
+  IconTrackMemorising,
+  IconTrackReciting,
+  IconTrackRevising,
+  TrackActivityIcon,
+} from "@/app/components/track-activity-icons";
 
 type HeatmapActivity = "memorizing" | "revising" | "reciting";
 
@@ -57,7 +63,7 @@ const TRACK_OPTIONS: { value: MatrixTrack; label: string }[] = [
   { value: "reciting", label: "Reciting" },
 ];
 
-/** When a cell has multiple badges, tint the cell by the first of M → R → C present. */
+/** When a cell has multiple badges, tint the cell by the first of memorising → revising → reciting present. */
 const CHROME_ACT_ORDER: HeatmapActivity[] = ["memorizing", "revising", "reciting"];
 
 function primaryActivityForCellChrome(activities: HeatmapActivity[]): HeatmapActivity {
@@ -151,8 +157,8 @@ export function SurahMatrixHelpButton({ className = "" }: { className?: string }
           className="absolute left-0 top-[calc(100%+0.375rem)] z-[60] w-[min(20rem,calc(100vw-1.25rem))] rounded-lg border border-zinc-200 bg-white p-2.5 text-left text-xs leading-snug text-zinc-600 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 sm:w-[min(22rem,calc(100vw-2rem))] sm:rounded-xl sm:p-3 sm:text-sm"
         >
           <p>
-            The header shows <span className="font-medium text-zinc-800 dark:text-zinc-100">M · R · C</span> (memorising,
-            revising, reciting). On a phone, each <span className="font-medium text-zinc-800 dark:text-zinc-100">row</span>{" "}
+            Icons in each cell show memorising, revising, or reciting (same as the key in the toolbar). On a phone, each{" "}
+            <span className="font-medium text-zinc-800 dark:text-zinc-100">row</span>{" "}
             is a surah and columns are members — scroll sideways for more people. On a large screen, members are rows and
             surahs scroll sideways. Tap <span className="font-medium text-zinc-800 dark:text-zinc-100">∧∨</span> next to
             Surah (phone) or Member (desktop) to flip order. Tap{" "}
@@ -339,32 +345,72 @@ function MatrixFloatingBar({
   );
 }
 
-const BADGE: Record<HeatmapActivity, { label: string; title: string }> = {
-  memorizing: { label: "M", title: "Memorising" },
-  revising: { label: "R", title: "Revising" },
-  reciting: { label: "C", title: "Reciting" },
+const TRACK_TITLE: Record<HeatmapActivity, string> = {
+  memorizing: "Memorising",
+  revising: "Revising",
+  reciting: "Reciting",
 };
 
-/** M · R · C key — shared by club toolbar (heatmap) and docs. */
+/** Track icon key — shared by club toolbar (heatmap) and help copy. */
 export function MatrixTrackLegend({ className = "" }: { className?: string }) {
   return (
-    <p className={`text-xs leading-snug text-zinc-600 dark:text-zinc-400 sm:text-sm ${className}`}>
-      <span className="font-semibold text-emerald-600 dark:text-emerald-400">M</span> memorising
-      <span className="mx-1 text-zinc-400 dark:text-zinc-600" aria-hidden>
+    <p className={`flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs leading-snug text-zinc-600 dark:text-zinc-400 sm:text-sm ${className}`}>
+      <span className="inline-flex items-center gap-1">
+        <IconTrackMemorising className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        <span>memorising</span>
+      </span>
+      <span className="text-zinc-400 dark:text-zinc-600" aria-hidden>
         ·
       </span>
-      <span className="font-semibold text-indigo-600 dark:text-indigo-400">R</span> revising
-      <span className="mx-1 text-zinc-400 dark:text-zinc-600" aria-hidden>
+      <span className="inline-flex items-center gap-1">
+        <IconTrackRevising className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+        <span>revising</span>
+      </span>
+      <span className="text-zinc-400 dark:text-zinc-600" aria-hidden>
         ·
       </span>
-      <span className="font-semibold text-amber-600 dark:text-amber-400">C</span> reciting
+      <span className="inline-flex items-center gap-1">
+        <IconTrackReciting className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <span>reciting</span>
+      </span>
     </p>
   );
 }
 
-/** Plain track letters (no pill); white on dark theme, dark on light tinted cells. */
-const MATRIX_TRACK_LETTER =
-  "text-center text-[9px] font-bold leading-none tabular-nums text-zinc-900 sm:text-[10px] lg:text-xs dark:text-white";
+/** Icons in matrix cells: high contrast on tinted backgrounds. */
+const MATRIX_TRACK_ICON_WRAP =
+  "inline-flex h-3 w-3 shrink-0 items-center justify-center text-zinc-900 sm:h-3.5 sm:w-3.5 lg:h-4 lg:w-4 dark:text-white";
+
+function orderedActivitiesForCell(activities: HeatmapActivity[]): HeatmapActivity[] {
+  return CHROME_ACT_ORDER.filter((a) => activities.includes(a));
+}
+
+function MatrixCellTrackIcons({ activities }: { activities: HeatmapActivity[] }) {
+  const ordered = orderedActivitiesForCell(activities);
+  const wrap = MATRIX_TRACK_ICON_WRAP;
+  const glyph = (a: HeatmapActivity) => (
+    <span key={a} title={TRACK_TITLE[a]} className={wrap}>
+      <TrackActivityIcon activity={a} className="h-full w-full" />
+    </span>
+  );
+  if (ordered.length === 1) {
+    return <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center">{glyph(ordered[0]!)}</div>;
+  }
+  if (ordered.length === 2) {
+    return (
+      <div className="flex h-full min-h-0 w-full flex-1 flex-row items-center justify-center gap-0.5">{ordered.map(glyph)}</div>
+    );
+  }
+  return (
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center gap-0.5">
+      <div className="flex flex-row items-center justify-center gap-0.5">
+        {glyph(ordered[0]!)}
+        {glyph(ordered[1]!)}
+      </div>
+      <div className="flex justify-center">{glyph(ordered[2]!)}</div>
+    </div>
+  );
+}
 
 /** Selection highlight + floating bar accents for the active matrix track (default: memorising → green). */
 const MATRIX_TRACK_UI: Record<
@@ -465,8 +511,8 @@ function HeatmapCell({
           }`}
         >
           {list.map((a) => (
-            <span key={a} title={BADGE[a].title} className={MATRIX_TRACK_LETTER}>
-              {BADGE[a].label}
+            <span key={a} title={TRACK_TITLE[a]} className={MATRIX_TRACK_ICON_WRAP}>
+              <TrackActivityIcon activity={a} className="h-full w-full" />
             </span>
           ))}
         </div>
@@ -504,14 +550,10 @@ function HeatmapCell({
 
   return (
     <div
-      className={`mx-auto flex ${CELL_BOX} flex-col items-center justify-center gap-0.5 px-0.5 py-0.5 ${roSaved}`}
-      title={`${surahTitle} · ${list.map((a) => BADGE[a].title).join(" · ")}`}
+      className={`mx-auto flex ${CELL_BOX} flex-col items-stretch justify-center px-0.5 py-0.5 ${roSaved}`}
+      title={`${surahTitle} · ${list.map((a) => TRACK_TITLE[a]).join(" · ")}`}
     >
-      {list.map((a) => (
-        <span key={a} title={BADGE[a].title} className={MATRIX_TRACK_LETTER}>
-          {BADGE[a].label}
-        </span>
-      ))}
+      <MatrixCellTrackIcons activities={list} />
     </div>
   );
 }
@@ -822,7 +864,10 @@ export function SurahHeatmapPanel({
             ) : null}
 
             <div className="text-left">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Memorising</p>
+              <p className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                <IconTrackMemorising className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                Memorising
+              </p>
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
                 {myMem}
               </p>
@@ -830,7 +875,10 @@ export function SurahHeatmapPanel({
             </div>
 
             <div className="text-left">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Revising</p>
+              <p className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                <IconTrackRevising className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                Revising
+              </p>
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
                 {myRev}
               </p>
@@ -838,7 +886,10 @@ export function SurahHeatmapPanel({
             </div>
 
             <div className="text-left">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Reciting</p>
+              <p className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                <IconTrackReciting className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                Reciting
+              </p>
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
                 {myRec}
               </p>
