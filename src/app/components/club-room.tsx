@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Bar,
@@ -91,6 +92,26 @@ type ProgressReport = {
 };
 
 type MainPanel = "chat" | "focus" | "heatmap" | "trajectory" | "bars";
+
+function ClubBrandTitle() {
+  return (
+    <div className="flex items-center gap-2">
+      <Image
+        src="/icon.png"
+        alt=""
+        width={24}
+        height={24}
+        sizes="24px"
+        className="h-6 w-6 shrink-0 rounded object-contain"
+        priority
+        aria-hidden
+      />
+      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 sm:text-[13px]">
+        Alif Laam Meem
+      </p>
+    </div>
+  );
+}
 
 const NAV: {
   id: MainPanel;
@@ -864,10 +885,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#ececec] dark:bg-zinc-950">
       {/* One continuous rule under brand + current view */}
       <header className="relative z-30 flex shrink-0 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="hidden h-14 w-[220px] shrink-0 items-center border-r border-black/[0.06] bg-[#f4f4f4] px-3 dark:border-zinc-800 dark:bg-zinc-900 lg:flex">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 sm:text-[13px]">
-            Alif Laam Meem
-          </p>
+        <div className="hidden h-14 w-[220px] shrink-0 items-center border-r border-black/[0.06] bg-[#f4f4f4] pl-5 pr-3 dark:border-zinc-800 dark:bg-zinc-900 lg:flex">
+          <ClubBrandTitle />
         </div>
         <div className="flex h-14 min-w-0 flex-1 items-center justify-between gap-2 bg-white px-3 sm:gap-3 sm:px-5 dark:bg-zinc-950">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
@@ -1178,10 +1197,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
         aria-hidden={!mobileNavOpen}
         aria-label="Club navigation"
       >
-        <div className="shrink-0 border-b border-black/[0.06] px-3 py-4 dark:border-zinc-800">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Alif Laam Meem
-          </p>
+        <div className="shrink-0 border-b border-black/[0.06] py-4 pl-5 pr-3 dark:border-zinc-800">
+          <ClubBrandTitle />
         </div>
         <ClubSideNav
           panel={panel}
