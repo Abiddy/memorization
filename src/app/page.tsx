@@ -19,11 +19,10 @@ export default async function Home() {
         <h1 className="mt-3 text-center text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           Quran memorisation club
         </h1>
-        <p className="mx-auto mt-3 max-w-sm text-center text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-          Share updates in one chat. When your message includes the word{" "}
-          <span className="font-mono text-emerald-800 dark:text-emerald-300">chat</span>, we ask Gemini to log progress
-          for the table and charts.
+        <p className="mx-auto mt-3 max-w-md text-center text-sm italic leading-relaxed text-zinc-600 dark:text-zinc-400">
+          This is the Book about which there is no doubt—a guidance for those mindful of Allah.
         </p>
+        <p className="mx-auto mt-2 text-center text-xs text-zinc-500 dark:text-zinc-500">Surah Al-Baqarah, ayah 2</p>
         <div className="mt-8 flex justify-center">
           <LoginForm />
         </div>

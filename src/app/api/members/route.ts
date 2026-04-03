@@ -2,9 +2,18 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hashPassword, verifyPassword } from "@/lib/password";
+
+const UsernameSchema = z
+  .string()
+  .trim()
+  .min(3, "Username must be at least 3 characters.")
+  .max(32, "Username is too long.")
+  .regex(/^[a-zA-Z0-9_-]+$/, "Use letters, numbers, underscores, or hyphens only.");
 
 const BodySchema = z.object({
-  display_name: z.string().min(1).max(80),
+  username: UsernameSchema,
+  password: z.string().min(8, "Password must be at least 8 characters.").max(128),
 });
 
 const COOKIE = "alif_member_id";
@@ -26,10 +35,6 @@ export async function GET() {
   return NextResponse.json({ members: data ?? [] });
 }
 
-function escapeIlike(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-}
-
 export async function POST(request: Request) {
   let json: unknown;
   try {
@@ -40,18 +45,19 @@ export async function POST(request: Request) {
 
   const parsed = BodySchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid display name" }, { status: 400 });
+    const msg = parsed.error.issues[0]?.message ?? "Invalid request";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  const displayName = parsed.data.display_name.trim();
+  const usernameNormalized = parsed.data.username.trim().toLowerCase();
+  const password = parsed.data.password;
+  const displayName = parsed.data.username.trim();
   const admin = createAdminClient();
 
-  const safePattern = escapeIlike(displayName);
   const { data: existing, error: findError } = await admin
     .from("members")
-    .select("id, display_name")
-    .ilike("display_name", safePattern)
-    .limit(1)
+    .select("id, display_name, password_hash")
+    .eq("username", usernameNormalized)
     .maybeSingle();
 
   if (findError) {
@@ -62,16 +68,34 @@ export async function POST(request: Request) {
   let name: string;
 
   if (existing) {
+    if (!existing.password_hash) {
+      return NextResponse.json(
+        { error: "This account has no password set yet. Ask your admin to finish setup." },
+        { status: 403 },
+      );
+    }
+    const ok = verifyPassword(password, existing.password_hash);
+    if (!ok) {
+      return NextResponse.json({ error: "Wrong password." }, { status: 401 });
+    }
     memberId = existing.id;
     name = existing.display_name;
   } else {
+    const passwordHash = hashPassword(password);
     const { data: inserted, error: insertError } = await admin
       .from("members")
-      .insert({ display_name: displayName })
+      .insert({
+        username: usernameNormalized,
+        display_name: displayName,
+        password_hash: passwordHash,
+      })
       .select("id, display_name")
       .single();
 
     if (insertError) {
+      if (insertError.code === "23505") {
+        return NextResponse.json({ error: "That username or display name is already taken." }, { status: 409 });
+      }
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
     memberId = inserted.id;

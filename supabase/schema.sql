@@ -5,6 +5,8 @@ create extension if not exists "pgcrypto";
 create table if not exists public.members (
   id uuid primary key default gen_random_uuid(),
   display_name text not null,
+  username text,
+  password_hash text,
   memorized_surah_ids int[] not null default '{}',
   created_at timestamptz not null default now(),
   onboarding_completed_at timestamptz,
@@ -13,6 +15,10 @@ create table if not exists public.members (
 
 create unique index if not exists members_display_name_lower_idx
   on public.members (lower(trim(display_name)));
+
+create unique index if not exists members_username_lower_idx
+  on public.members (lower(trim(username)))
+  where username is not null and trim(username) <> '';
 
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),

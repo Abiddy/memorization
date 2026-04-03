@@ -1109,8 +1109,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
         </div>
         <div className="flex h-14 min-w-0 flex-1 items-center justify-between gap-2 bg-white px-3 sm:gap-3 sm:px-5 dark:bg-zinc-950">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
-            <button
-              type="button"
+        <button
+          type="button"
               onClick={() => setMobileNavOpen((o) => !o)}
               className="shrink-0 rounded-lg p-2 text-zinc-600 outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950 lg:hidden"
               aria-expanded={mobileNavOpen}
@@ -1118,7 +1118,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             >
               <IconMenu className="h-6 w-6" />
               <span className="sr-only">{mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}</span>
-            </button>
+        </button>
             <div className="flex min-w-0 items-center gap-2 text-base font-semibold text-zinc-800 dark:text-zinc-200 sm:gap-2.5 sm:text-lg">
               <span className="truncate">{panelTitle(panel)}</span>
               {panel === "heatmap" ? <SurahMatrixHelpButton /> : null}
@@ -1179,34 +1179,34 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
         <div className="flex min-h-0 flex-1 flex-col">
           {panel === "chat" ? (
             <>
-              <div
-                ref={listRef}
+          <div
+            ref={listRef}
                 className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white dark:bg-zinc-950"
-                aria-live="polite"
-              >
+            aria-live="polite"
+          >
                 <div className="flex flex-col items-start gap-6 px-5 py-8">
-                  {loadingMessages ? (
-                    <p className="text-sm text-zinc-500">Loading messages…</p>
-                  ) : messages.length === 0 ? (
-                    <p className="text-sm text-zinc-500">No messages yet. Say salam below.</p>
-                  ) : (
-                    messages.map((m) => (
+            {loadingMessages ? (
+              <p className="text-sm text-zinc-500">Loading messages…</p>
+            ) : messages.length === 0 ? (
+              <p className="text-sm text-zinc-500">No messages yet. Say salam below.</p>
+            ) : (
+              messages.map((m) => (
                       <article key={m.id} className="w-full">
                         {renderMessageBubble(m)}
-                      </article>
-                    ))
-                  )}
-                </div>
+                </article>
+              ))
+            )}
+          </div>
               </div>
               <div className="shrink-0 border-t border-zinc-200/80 bg-white p-4 shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.08)] dark:border-zinc-800 dark:bg-zinc-900">
-                {sendError ? (
-                  <p className="mb-2 text-xs text-red-600 dark:text-red-400" role="alert">
-                    {sendError}
-                  </p>
-                ) : null}
-                {sendHint ? (
-                  <p className="mb-2 text-xs text-emerald-700 dark:text-emerald-400">{sendHint}</p>
-                ) : null}
+            {sendError ? (
+              <p className="mb-2 text-xs text-red-600 dark:text-red-400" role="alert">
+                {sendError}
+              </p>
+            ) : null}
+            {sendHint ? (
+              <p className="mb-2 text-xs text-emerald-700 dark:text-emerald-400">{sendHint}</p>
+            ) : null}
                 <form
                   onSubmit={(e) => void sendMessage(e)}
                   className="flex flex-row items-center gap-1.5 rounded-2xl border border-zinc-200 bg-zinc-50/80 py-1.5 pl-2 pr-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
@@ -1226,22 +1226,22 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   <label className="sr-only" htmlFor="club-message-input">
                     Message
                   </label>
-                  <input
+              <input
                     id="club-message-input"
-                    type="text"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    maxLength={4000}
-                    placeholder="Write a message…"
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                maxLength={4000}
+                placeholder="Write a message…"
                     className="min-h-10 min-w-0 flex-1 border-0 bg-transparent py-2 pl-0.5 text-sm leading-normal text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-                  />
-                  <button
-                    type="submit"
+              />
+              <button
+                type="submit"
                     className="shrink-0 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-                  >
-                    Send
-                  </button>
-                </form>
+              >
+                Send
+              </button>
+          </form>
               </div>
             </>
           ) : null}
@@ -1298,16 +1298,16 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                         </span>
                       </th>
                       <th className="px-2 py-2 text-right lg:px-4 lg:py-3">% Quran</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                  </tr>
+                </thead>
+                <tbody>
                     {!progress || progress.dashboard.length === 0 ? (
-                      <tr>
+                    <tr>
                         <td colSpan={5} className="px-2 py-8 text-center text-zinc-500 lg:px-4 lg:py-10">
                           No members yet.
-                        </td>
-                      </tr>
-                    ) : (
+                      </td>
+                    </tr>
+                  ) : (
                       progress.dashboard.map((row) => (
                         <tr key={row.member_id} className="border-t border-zinc-200 dark:border-zinc-800">
                           <td className="px-2 py-1.5 align-top font-medium text-zinc-900 dark:text-zinc-100 lg:px-4 lg:py-3 lg:align-middle">
@@ -1333,14 +1333,14 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                           </td>
                           <td className="px-2 py-1.5 text-right align-top tabular-nums text-zinc-700 dark:text-zinc-300 lg:px-4 lg:py-3 lg:align-middle">
                             {row.pct_quran}%
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
+          </div>
           ) : null}
 
           {panel === "heatmap" ? (
@@ -1380,13 +1380,13 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                       </p>
                     ) : (
                       <div className="h-[min(50vh,22rem)] min-h-[200px] w-full outline-none [&_.recharts-wrapper]:outline-none">
-                        <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%">
                           <LineChart
                             data={projectionChart.rows}
                             margin={{ top: 12, right: 16, left: 4, bottom: 12 }}
                             className="outline-none"
                           >
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
                             <XAxis
                               type="number"
                               dataKey="monthIndex"
@@ -1408,7 +1408,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                               tick={{ fontSize: 10 }}
                               className="text-zinc-500"
                             />
-                            <Tooltip
+                    <Tooltip
                               cursor={false}
                               formatter={(v) => {
                                 const n = typeof v === "number" ? v : Number(v) || 0;
@@ -1427,16 +1427,16 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                                   return ym;
                                 }
                               }}
-                              contentStyle={{
-                                borderRadius: "0.75rem",
-                                border: "1px solid rgb(228 228 231)",
+                      contentStyle={{
+                        borderRadius: "0.75rem",
+                        border: "1px solid rgb(228 228 231)",
                                 fontSize: "11px",
-                              }}
-                            />
+                      }}
+                    />
                             {projectionChart.lines.map((ln) => (
-                              <Line
+                    <Line
                                 key={ln.dataKey}
-                                type="monotone"
+                      type="monotone"
                                 dataKey={ln.dataKey}
                                 name={ln.name}
                                 stroke={ln.stroke}
@@ -1446,11 +1446,11 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                                 connectNulls={false}
                               />
                             ))}
-                          </LineChart>
-                        </ResponsiveContainer>
+                  </LineChart>
+                </ResponsiveContainer>
                       </div>
-                    )}
-                  </div>
+              )}
+            </div>
                 </section>
 
                 <section className="min-w-0 pb-4" aria-labelledby="stats-leaderboard-heading">
@@ -1464,29 +1464,29 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                     % of the Quran memorised (whole surahs you’ve logged under Memorising, any order).
                   </p>
                   <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/40 sm:p-4">
-                    {!progress || progress.leaderboard.length === 0 ? (
+              {!progress || progress.leaderboard.length === 0 ? (
                       <p className="px-1 py-8 text-center text-sm text-zinc-500">No leaderboard data yet.</p>
-                    ) : (
+              ) : (
                       <div className="h-[min(50vh,20rem)] min-h-[180px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={progress.leaderboard.map((r) => ({
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={progress.leaderboard.map((r) => ({
                               name: r.display_name.length > 14 ? `${r.display_name.slice(0, 13)}…` : r.display_name,
                               pct: r.pct_quran,
-                            }))}
-                            layout="vertical"
+                    }))}
+                    layout="vertical"
                             margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
                             <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
                             <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} />
                             <Tooltip formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, "% Quran"]} />
                             <Bar dataKey="pct" name="% Quran" fill="#047857" radius={[0, 4, 4, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
+                  </BarChart>
+                </ResponsiveContainer>
                       </div>
-                    )}
-                  </div>
+              )}
+            </div>
                   {progress && progress.leaderboard.length > 0 ? (
                     <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
                       <table className="w-full min-w-[16rem] text-left text-sm">
@@ -1516,10 +1516,10 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                           ))}
                         </tbody>
                       </table>
-                    </div>
+          </div>
                   ) : null}
                 </section>
-              </div>
+      </div>
             </div>
           ) : null}
         </div>
