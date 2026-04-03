@@ -1,32 +1,51 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { surahName, uniqueSurahsInJuz, type ProgressActivity } from "@/lib/quran";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildAllSurahRows, SurahPickerListByJuz, type SurahRow } from "@/app/components/surah-picker-list";
+import type { ProgressActivity } from "@/lib/quran";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 
 export function StructuredProgressPicker({
+  memorizedSurahIds,
   onPosted,
   onError,
 }: {
+  /** Same baseline as My goals: surahs already counted as memorised (% Quran). */
+  memorizedSurahIds: number[];
   onPosted: () => void;
   onError: (msg: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>(1);
   const [activity, setActivity] = useState<ProgressActivity | null>(null);
-  const [juz, setJuz] = useState<number | null>(null);
-  /** Memorising / Revising / Reciting: one or more surahs in the chosen juz. */
   const [memorizingSurahs, setMemorizingSurahs] = useState<Set<number>>(new Set());
   const [revisingSurahs, setRevisingSurahs] = useState<Set<number>>(new Set());
   const [recitingSurahs, setRecitingSurahs] = useState<Set<number>>(new Set());
   const [posting, setPosting] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  const memorizedSet = useMemo(
+    () => new Set(memorizedSurahIds.filter((n) => n >= 1 && n <= 114)),
+    [memorizedSurahIds]
+  );
+
+  const allRows = useMemo(() => buildAllSurahRows(), []);
+
+  const optionsForActivity = useMemo((): SurahRow[] => {
+    if (!activity) return [];
+    if (activity === "memorizing") {
+      return allRows.filter((r) => !memorizedSet.has(r.id));
+    }
+    if (activity === "revising") {
+      return allRows.filter((r) => memorizedSet.has(r.id));
+    }
+    return allRows;
+  }, [activity, allRows, memorizedSet]);
+
   const reset = useCallback(() => {
     setStep(1);
     setActivity(null);
-    setJuz(null);
     setMemorizingSurahs(new Set());
     setRevisingSurahs(new Set());
     setRecitingSurahs(new Set());
@@ -73,7 +92,7 @@ export function StructuredProgressPicker({
   }
 
   async function post() {
-    if (!activity || juz == null) return;
+    if (!activity) return;
     if (activity === "memorizing") {
       if (memorizingSurahs.size === 0) return;
     } else if (activity === "revising") {
@@ -86,10 +105,10 @@ export function StructuredProgressPicker({
     try {
       const body =
         activity === "memorizing"
-          ? { track: "memorizing" as const, surah_ids: [...memorizingSurahs], active_juz: juz }
+          ? { track: "memorizing" as const, surah_ids: [...memorizingSurahs] }
           : activity === "revising"
-            ? { track: "revising" as const, surah_ids: [...revisingSurahs], active_juz: juz }
-            : { track: "reciting" as const, surah_ids: [...recitingSurahs], active_juz: juz };
+            ? { track: "revising" as const, surah_ids: [...revisingSurahs] }
+            : { track: "reciting" as const, surah_ids: [...recitingSurahs] };
 
       const res = await fetch("/api/member-progress", {
         method: "POST",
@@ -109,7 +128,6 @@ export function StructuredProgressPicker({
     }
   }
 
-  const surahsInJuz = juz != null ? uniqueSurahsInJuz(juz) : [];
   const memorizing = activity === "memorizing";
   const revising = activity === "revising";
   const reciting = activity === "reciting";
@@ -119,17 +137,20 @@ export function StructuredProgressPicker({
       ? revisingSurahs.size > 0
       : recitingSurahs.size > 0;
 
-  const juzPanelTitle =
-    memorizing ? "Juz (memorising)" : revising ? "Juz (revising)" : "Juz (reciting)";
+  const surahPanelTitle =
+    memorizing ? "Surahs (memorising)" : revising ? "Surahs (revising)" : "Surahs (reciting)";
 
-  const surahPanelTitle = memorizing
-    ? `Surahs in Juz ${juz}`
+  const emptyOptionsHint = memorizing
+    ? "You’ve marked every surah as memorised — nothing left to add here."
     : revising
-      ? `Surahs in Juz ${juz}`
-      : `Surahs in Juz ${juz}`;
+      ? "Mark surahs as memorised first (onboarding or the memorising track) to revise them."
+      : null;
 
-  const panelClass =
-    "min-w-[200px] shrink-0 max-h-72 overflow-y-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900";
+  const activityPanelClass =
+    "min-w-[min(92vw,20rem)] max-w-[min(92vw,22rem)] shrink-0 max-h-72 overflow-y-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900";
+
+  const surahPanelClass =
+    "flex min-h-0 min-w-[min(94vw,22rem)] max-w-[min(94vw,24rem)] max-h-[min(72dvh,28rem)] shrink-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900";
 
   return (
     <div ref={rootRef} className="relative shrink-0">
@@ -155,7 +176,7 @@ export function StructuredProgressPicker({
           role="presentation"
         >
           {step >= 1 ? (
-            <div className={panelClass} role="listbox" aria-label="Activity">
+            <div className={activityPanelClass} role="listbox" aria-label="Activity">
               <p className="border-b border-zinc-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
                 Activity
               </p>
@@ -163,6 +184,9 @@ export function StructuredProgressPicker({
                 type="button"
                 onClick={() => {
                   setActivity("memorizing");
+                  setMemorizingSurahs(new Set());
+                  setRevisingSurahs(new Set());
+                  setRecitingSurahs(new Set());
                   setStep(2);
                 }}
                 className={`block w-full px-3 py-2 text-left text-sm ${
@@ -175,6 +199,9 @@ export function StructuredProgressPicker({
                 type="button"
                 onClick={() => {
                   setActivity("revising");
+                  setMemorizingSurahs(new Set());
+                  setRevisingSurahs(new Set());
+                  setRecitingSurahs(new Set());
                   setStep(2);
                 }}
                 className={`block w-full px-3 py-2 text-left text-sm ${
@@ -187,6 +214,9 @@ export function StructuredProgressPicker({
                 type="button"
                 onClick={() => {
                   setActivity("reciting");
+                  setMemorizingSurahs(new Set());
+                  setRevisingSurahs(new Set());
+                  setRecitingSurahs(new Set());
                   setStep(2);
                 }}
                 className={`block w-full px-3 py-2 text-left text-sm ${
@@ -199,99 +229,28 @@ export function StructuredProgressPicker({
           ) : null}
 
           {step >= 2 && activity ? (
-            <div className={panelClass} role="listbox" aria-label="Juz">
-              <p className="border-b border-zinc-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
-                {juzPanelTitle}
-              </p>
-              {Array.from({ length: 30 }, (_, i) => i + 1).map((j) => (
-                <button
-                  key={j}
-                  type="button"
-                  onClick={() => {
-                    setJuz(j);
-                    setMemorizingSurahs(new Set());
-                    setRevisingSurahs(new Set());
-                    setRecitingSurahs(new Set());
-                    setStep(3);
-                  }}
-                  className={`block w-full px-3 py-2 text-left text-sm tabular-nums ${
-                    juz === j ? "bg-[#ebebeb] dark:bg-zinc-800" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/80"
-                  }`}
-                >
-                  Juz {j}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          {step >= 3 && activity && juz != null ? (
-            <div className={`${panelClass} min-w-[240px]`}>
-              <p className="border-b border-zinc-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
+            <div className={surahPanelClass}>
+              <p className="shrink-0 border-b border-zinc-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
                 {surahPanelTitle}
               </p>
-              <div className="max-h-48 overflow-y-auto">
-                {surahsInJuz.map((s) => {
-                  const on = memorizing
-                    ? memorizingSurahs.has(s)
-                    : revising
-                      ? revisingSurahs.has(s)
-                      : recitingSurahs.has(s);
-                  if (memorizing) {
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => toggleMemorizingSurah(s)}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-                          on ? "bg-[#ebebeb] dark:bg-zinc-800" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/80"
-                        }`}
-                      >
-                        <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-                            on
-                              ? "border-emerald-600 bg-emerald-600 text-white"
-                              : "border-zinc-300 dark:border-zinc-600"
-                          }`}
-                          aria-hidden
-                        >
-                          {on ? "✓" : ""}
-                        </span>
-                        <span>
-                          {s}. {surahName(s)}
-                        </span>
-                      </button>
-                    );
-                  }
-                  return (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => (revising ? toggleRevisingSurah(s) : toggleRecitingSurah(s))}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-                        on ? "bg-[#ebebeb] dark:bg-zinc-800" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/80"
-                      }`}
-                    >
-                      <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-                          on
-                            ? "border-emerald-600 bg-emerald-600 text-white"
-                            : "border-zinc-300 dark:border-zinc-600"
-                        }`}
-                        aria-hidden
-                      >
-                        {on ? "✓" : ""}
-                      </span>
-                      <span>
-                        {s}. {surahName(s)}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-2">
+                {optionsForActivity.length === 0 ? (
+                  <p className="py-6 text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                    {emptyOptionsHint}
+                  </p>
+                ) : (
+                  <SurahPickerListByJuz
+                    options={optionsForActivity}
+                    selected={memorizing ? memorizingSurahs : revising ? revisingSurahs : recitingSurahs}
+                    onToggle={memorizing ? toggleMemorizingSurah : revising ? toggleRevisingSurah : toggleRecitingSurah}
+                    listMaxHeightClass="max-h-[min(42dvh,14rem)] sm:max-h-[min(38dvh,13rem)]"
+                  />
+                )}
               </div>
-              <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
+              <div className="shrink-0 border-t border-zinc-100 p-2 dark:border-zinc-800">
                 <button
                   type="button"
-                  disabled={!canPost || posting}
+                  disabled={!canPost || posting || optionsForActivity.length === 0}
                   onClick={() => void post()}
                   className="w-full rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                 >

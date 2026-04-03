@@ -180,7 +180,7 @@ function ClubBrandTitle() {
         width={24}
         height={24}
         sizes="24px"
-        className="h-6 w-6 shrink-0 object-contain dark:opacity-90"
+        className="h-6 w-6 shrink-0 object-contain"
         priority
         aria-hidden
       />
@@ -1212,6 +1212,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   className="flex flex-row items-center gap-1.5 rounded-2xl border border-zinc-200 bg-zinc-50/80 py-1.5 pl-2 pr-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
                 >
                   <StructuredProgressPicker
+                    memorizedSurahIds={progress?.me?.memorized_surah_ids ?? []}
                     onPosted={() => {
                       void loadMessages();
                       void loadProgress();

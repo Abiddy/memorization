@@ -82,6 +82,40 @@ export async function POST(request: Request) {
     reciting_surahs: (existing?.reciting_surahs as number[] | null) ?? [],
   };
 
+  const memorizedSet = new Set(
+    ((member.memorized_surah_ids as number[] | null) ?? []).filter((n) => n >= 1 && n <= 114)
+  );
+
+  const ids = [...new Set(parsed.data.surah_ids)].filter((n) => n >= 1 && n <= 114);
+  if (ids.length === 0) {
+    return NextResponse.json({ error: "Pick at least one valid surah." }, { status: 400 });
+  }
+
+  if (parsed.data.track === "memorizing") {
+    const already = ids.filter((id) => memorizedSet.has(id));
+    if (already.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Memorising track is only for surahs you haven’t memorised yet. Use Revising for what you already know.",
+        },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (parsed.data.track === "revising") {
+    const notYet = ids.filter((id) => !memorizedSet.has(id));
+    if (notYet.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Revising only includes surahs you’ve already memorised (same rule as My goals).",
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   let body: string;
   let eventKind: "memorizing" | "revising" | "reciting";
   let surahSummary: string;
@@ -89,29 +123,24 @@ export async function POST(request: Request) {
   let nextRow: MemberProgressRow = { ...base };
 
   const juzForChat = parsed.data.active_juz;
+  const uniqueSurahs = [...ids].sort((a, b) => a - b);
 
   if (parsed.data.track === "memorizing") {
-    const { surah_ids } = parsed.data;
-    const uniqueSurahs = [...new Set(surah_ids)];
     body = formatProgressChatLine("memorizing", uniqueSurahs, juzForChat);
     eventKind = "memorizing";
-    surahSummary = uniqueSurahs.sort((a, b) => a - b).join(",");
+    surahSummary = uniqueSurahs.join(",");
     summary = formatProgressEventSummary("memorizing", uniqueSurahs);
     nextRow.memorizing_surahs = uniqueSurahs;
   } else if (parsed.data.track === "revising") {
-    const { surah_ids } = parsed.data;
-    const uniqueSurahs = [...new Set(surah_ids)];
     body = formatProgressChatLine("revising", uniqueSurahs, juzForChat);
     eventKind = "revising";
-    surahSummary = uniqueSurahs.sort((a, b) => a - b).join(",");
+    surahSummary = uniqueSurahs.join(",");
     summary = formatProgressEventSummary("revising", uniqueSurahs);
     nextRow.revising_surahs = uniqueSurahs;
   } else {
-    const { surah_ids } = parsed.data;
-    const uniqueSurahs = [...new Set(surah_ids)];
     body = formatProgressChatLine("reciting", uniqueSurahs, juzForChat);
     eventKind = "reciting";
-    surahSummary = uniqueSurahs.sort((a, b) => a - b).join(",");
+    surahSummary = uniqueSurahs.join(",");
     summary = formatProgressEventSummary("reciting", uniqueSurahs);
     nextRow.reciting_surahs = uniqueSurahs;
   }
@@ -159,7 +188,7 @@ export async function POST(request: Request) {
 
   if (parsed.data.track === "memorizing") {
     const prev = (member.memorized_surah_ids as number[] | null) ?? [];
-    const merged = [...new Set([...prev, ...parsed.data.surah_ids])].sort((a, b) => a - b);
+    const merged = [...new Set([...prev, ...uniqueSurahs])].sort((a, b) => a - b);
     const { error: memUp } = await admin.from("members").update({ memorized_surah_ids: merged }).eq("id", member.id);
     if (memUp) {
       return NextResponse.json({ error: memUp.message }, { status: 500 });
