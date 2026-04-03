@@ -177,10 +177,10 @@ function ClubBrandTitle() {
       <Image
         src="/icon.svg"
         alt=""
-        width={24}
-        height={24}
-        sizes="24px"
-        className="h-6 w-6 shrink-0 object-contain"
+        width={14}
+        height={14}
+        sizes="16px"
+        className="h-[16px] w-[16px] shrink-0 object-contain"
         priority
         aria-hidden
       />
@@ -1472,17 +1472,36 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={progress.leaderboard.map((r) => ({
-                              name: r.display_name.length > 14 ? `${r.display_name.slice(0, 13)}…` : r.display_name,
-                              pct: r.pct_quran,
+                      name: r.display_name.length > 14 ? `${r.display_name.slice(0, 13)}…` : r.display_name,
+                      pct: r.pct_quran,
                     }))}
-                    layout="vertical"
-                            margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+                    barCategoryGap="18%"
                   >
                     <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                            <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
-                            <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} />
-                            <Tooltip formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, "% Quran"]} />
-                            <Bar dataKey="pct" name="% Quran" fill="#047857" radius={[0, 4, 4, 0]} />
+                    <XAxis
+                      dataKey="name"
+                      type="category"
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={{ className: "stroke-zinc-200 dark:stroke-zinc-600" }}
+                      interval={0}
+                    />
+                    <YAxis
+                      type="number"
+                      domain={[0, 100]}
+                      ticks={[0, 25, 50, 75, 100]}
+                      tick={{ fontSize: 10 }}
+                      width={36}
+                    />
+                    <Tooltip formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, "% Quran"]} />
+                    <Bar
+                      dataKey="pct"
+                      name="% Quran"
+                      fill="#047857"
+                      maxBarSize={22}
+                      radius={[4, 4, 0, 0]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
                       </div>
