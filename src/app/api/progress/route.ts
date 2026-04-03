@@ -1,7 +1,24 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildMemorizationTimeline } from "@/lib/progress-aggregate";
 import { juzWhereSurahStarts, percentQuranFromSurahIds, surahName } from "@/lib/quran";
+
+const MEMBER_COOKIE = "alif_member_id";
+
+function calendarDaysLeftUtc(endYmd: string): number {
+  const [y, m, d] = endYmd.split("-").map(Number);
+  if (!y || !m || !d) return 0;
+  const end = Date.UTC(y, m - 1, d);
+  const t = new Date();
+  const start = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
+  return Math.max(0, Math.round((end - start) / 86400000));
+}
+
+function goalEntries(ids: number[]): { surahId: number; name: string }[] {
+  const sorted = [...new Set(ids)].filter((n) => n >= 1 && n <= 114).sort((a, b) => a - b);
+  return sorted.map((surahId) => ({ surahId, name: surahName(surahId) }));
+}
 
 type HeatmapActivity = "memorizing" | "revising" | "reciting";
 
@@ -174,6 +191,80 @@ export async function GET() {
     mpByMember as Map<string, MpShape>
   );
 
+  const cookieStore = await cookies();
+  const selfId = cookieStore.get(MEMBER_COOKIE)?.value;
+  type GoalTrack = {
+    entries: { surahId: number; name: string }[];
+    targetEnd: string;
+    daysLeft: number;
+  };
+
+  let me: {
+    needsOnboarding: boolean;
+    goals: {
+      memorizing: GoalTrack;
+      revising: GoalTrack;
+      reciting: GoalTrack;
+    } | null;
+  } | null = null;
+
+  if (selfId) {
+    let needsOnboarding = false;
+    let goalsPayload: {
+      memorizing: GoalTrack;
+      revising: GoalTrack;
+      reciting: GoalTrack;
+    } | null = null;
+
+    const { data: selfRow, error: selfErr } = await admin
+      .from("members")
+      .select("onboarding_completed_at")
+      .eq("id", selfId)
+      .maybeSingle();
+
+    if (!selfErr && selfRow) {
+      needsOnboarding = selfRow.onboarding_completed_at == null;
+    }
+
+    const { data: goalRow, error: goalErr } = await admin
+      .from("member_goals")
+      .select("*")
+      .eq("member_id", selfId)
+      .maybeSingle();
+
+    if (!goalErr && goalRow) {
+      const r = goalRow as Record<string, unknown>;
+      const legacy = typeof r.target_end === "string" ? r.target_end : undefined;
+      const mEnd =
+        (typeof r.memorize_target_end === "string" ? r.memorize_target_end : undefined) ?? legacy;
+      const revEnd =
+        (typeof r.revise_target_end === "string" ? r.revise_target_end : undefined) ?? legacy;
+      const recEnd =
+        (typeof r.recite_target_end === "string" ? r.recite_target_end : undefined) ?? legacy;
+      if (mEnd && revEnd && recEnd) {
+        goalsPayload = {
+          memorizing: {
+            entries: goalEntries((goalRow.memorizing_surah_ids as number[] | null) ?? []),
+            targetEnd: mEnd,
+            daysLeft: calendarDaysLeftUtc(mEnd),
+          },
+          revising: {
+            entries: goalEntries((goalRow.revising_surah_ids as number[] | null) ?? []),
+            targetEnd: revEnd,
+            daysLeft: calendarDaysLeftUtc(revEnd),
+          },
+          reciting: {
+            entries: goalEntries((goalRow.reciting_surah_ids as number[] | null) ?? []),
+            targetEnd: recEnd,
+            daysLeft: calendarDaysLeftUtc(recEnd),
+          },
+        };
+      }
+    }
+
+    me = { needsOnboarding, goals: goalsPayload };
+  }
+
   return NextResponse.json({
     leaderboard,
     clubSeries,
@@ -181,5 +272,6 @@ export async function GET() {
     memberTrajectories,
     dashboard,
     heatmap,
+    me,
   });
 }

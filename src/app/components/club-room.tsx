@@ -22,6 +22,8 @@ import {
   type HeatmapPayload,
 } from "@/app/components/surah-heatmap-panel";
 import { IconTrackMemorising, IconTrackReciting, IconTrackRevising } from "@/app/components/track-activity-icons";
+import { MyGoalsPanel, type MyGoalsPayload } from "@/app/components/my-goals-panel";
+import { OnboardingModal } from "@/app/components/onboarding-modal";
 import type { MemberTrajectory } from "@/lib/progress-aggregate";
 
 type MessageRow = {
@@ -82,6 +84,11 @@ function FocusTrackSurahList({ entries }: { entries: DashboardSurahEntry[] }) {
   );
 }
 
+type ProgressMe = {
+  needsOnboarding: boolean;
+  goals: MyGoalsPayload | null;
+};
+
 type ProgressReport = {
   leaderboard: { member_id: string; display_name: string; pct_quran: number }[];
   clubSeries: { date: string; clubPct: number }[];
@@ -89,9 +96,10 @@ type ProgressReport = {
   memberTrajectories: MemberTrajectory[];
   dashboard: DashboardRow[];
   heatmap: HeatmapPayload | null;
+  me: ProgressMe | null;
 };
 
-type MainPanel = "chat" | "focus" | "heatmap" | "trajectory" | "bars";
+type MainPanel = "chat" | "focus" | "goals" | "heatmap" | "trajectory" | "bars";
 
 function ClubBrandTitle() {
   return (
@@ -137,6 +145,19 @@ const NAV: {
         <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="10" />
           <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
+    },
+  },
+  {
+    id: "goals",
+    label: "My goals",
+    Icon: function IconGoals({ className }: { className?: string }) {
+      return (
+        <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <circle cx="12" cy="12" r="10" />
+          <circle cx="12" cy="12" r="6" />
+          <circle cx="12" cy="12" r="2" />
         </svg>
       );
     },
@@ -219,6 +240,8 @@ function panelTitle(p: MainPanel): string {
       return "Your Suhbah";
     case "focus":
       return "Current focus";
+    case "goals":
+      return "My goals";
     case "heatmap":
       return "Surah matrix";
     case "trajectory":
@@ -773,6 +796,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
       memberTrajectories: data.memberTrajectories ?? [],
       dashboard: data.dashboard ?? [],
       heatmap: data.heatmap ?? null,
+      me: (data as { me?: ProgressMe | null }).me ?? null,
     });
   }, []);
 
@@ -838,6 +862,13 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "members" },
+        () => {
+          void loadProgress();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "member_goals" },
         () => {
           void loadProgress();
         }
@@ -1149,6 +1180,18 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             </>
           ) : null}
 
+          {panel === "goals" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-950">
+              <MyGoalsPanel
+                goals={progress?.me?.goals ?? null}
+                resumeWelcomeSetup={Boolean(
+                  progress?.me && !progress.me.needsOnboarding && progress.me.goals == null
+                )}
+                onWelcomeDone={() => void loadProgress()}
+              />
+            </div>
+          ) : null}
+
           {panel === "focus" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-3 dark:bg-zinc-950 lg:p-6">
               <div className="mx-auto hidden w-full max-w-5xl shrink-0 lg:block">
@@ -1391,6 +1434,11 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           onNavigate={() => setMobileNavOpen(false)}
         />
       </aside>
+
+      <OnboardingModal
+        open={Boolean(progress?.me?.needsOnboarding)}
+        onDone={() => void loadProgress()}
+      />
     </div>
   );
 }

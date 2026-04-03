@@ -7,6 +7,7 @@ create table if not exists public.members (
   display_name text not null,
   memorized_surah_ids int[] not null default '{}',
   created_at timestamptz not null default now(),
+  onboarding_completed_at timestamptz,
   constraint display_name_nonempty check (char_length(trim(display_name)) > 0)
 );
 
@@ -45,19 +46,35 @@ create table if not exists public.member_progress (
 
 create index if not exists member_progress_updated_idx on public.member_progress (updated_at desc);
 
+create table if not exists public.member_goals (
+  member_id uuid primary key references public.members (id) on delete cascade,
+  memorize_target_end date not null,
+  revise_target_end date not null,
+  recite_target_end date not null,
+  memorizing_surah_ids int[] not null default '{}',
+  revising_surah_ids int[] not null default '{}',
+  reciting_surah_ids int[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists member_goals_updated_idx on public.member_goals (updated_at desc);
+
 alter table public.members enable row level security;
 alter table public.messages enable row level security;
 alter table public.progress_events enable row level security;
 alter table public.member_progress enable row level security;
+alter table public.member_goals enable row level security;
 
 -- Browser (anon key): read-only. Writes go through Next.js API using the service role.
 create policy "members_select_anon" on public.members for select to anon using (true);
 create policy "messages_select_anon" on public.messages for select to anon using (true);
 create policy "progress_events_select_anon" on public.progress_events for select to anon using (true);
 create policy "member_progress_select_anon" on public.member_progress for select to anon using (true);
+create policy "member_goals_select_anon" on public.member_goals for select to anon using (true);
 
 -- Realtime: expose inserts to subscribers (anon can listen if you enable Realtime for these tables)
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.progress_events;
 alter publication supabase_realtime add table public.members;
 alter publication supabase_realtime add table public.member_progress;
+alter publication supabase_realtime add table public.member_goals;
