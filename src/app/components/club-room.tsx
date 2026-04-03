@@ -29,6 +29,7 @@ import {
   OnboardingModal,
 } from "@/app/components/onboarding-modal";
 import type { MemberTrajectory } from "@/lib/progress-aggregate";
+import { uniqueSurahsInJuz } from "@/lib/quran";
 
 type MessageRow = {
   id: string;
@@ -78,6 +79,60 @@ function FocusTrackCheckIcon({ className }: { className?: string }) {
   );
 }
 
+/** English ordinal for juz label: 1st, 2nd, 21st, 30th */
+function ordinalJuz(n: number): string {
+  const teen = n % 100;
+  if (teen >= 11 && teen <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+/**
+ * Juz J is “fully present” if every surah that appears in juz J (whole-surah model) is in `ids`.
+ * Greedy juz 1→30: each full juz removes its surahs so one surah isn’t condensed twice.
+ */
+function partitionFullJuzes(ids: ReadonlySet<number>): { fullJuz: number[]; remainingIds: number[] } {
+  const pool = new Set(ids);
+  const fullJuz: number[] = [];
+  for (let j = 1; j <= 30; j++) {
+    const required = uniqueSurahsInJuz(j);
+    if (required.length === 0) continue;
+    if (required.every((sid) => pool.has(sid))) {
+      fullJuz.push(j);
+      for (const sid of required) pool.delete(sid);
+    }
+  }
+  return { fullJuz, remainingIds: [...pool].sort((a, b) => a - b) };
+}
+
+type FocusTrackPiece =
+  | { kind: "juz"; juzNum: number; done: boolean }
+  | { kind: "surah"; entry: DashboardSurahEntry; done: boolean };
+
+function buildFocusPieces(entries: DashboardSurahEntry[], done: boolean): FocusTrackPiece[] {
+  const byId = new Map<number, DashboardSurahEntry>();
+  for (const e of entries) byId.set(e.surahId, e);
+  const ids = new Set(entries.map((e) => e.surahId));
+  const { fullJuz, remainingIds } = partitionFullJuzes(ids);
+  const pieces: FocusTrackPiece[] = [];
+  for (const j of fullJuz.sort((a, b) => a - b)) {
+    pieces.push({ kind: "juz", juzNum: j, done });
+  }
+  for (const sid of remainingIds) {
+    const entry = byId.get(sid);
+    if (entry) pieces.push({ kind: "surah", entry, done });
+  }
+  return pieces;
+}
+
 /** Active + completed for one track: completed first (green + ✓), then in-progress (normal). */
 function FocusTrackCombinedList({
   active,
@@ -88,13 +143,12 @@ function FocusTrackCombinedList({
 }) {
   const doneIds = new Set(completed.map((c) => c.surahId));
   const activeOnly = active.filter((a) => !doneIds.has(a.surahId));
-  const bySurah = (a: DashboardSurahEntry, b: DashboardSurahEntry) => a.surahId - b.surahId;
-  const items: { entry: DashboardSurahEntry; done: boolean }[] = [
-    ...[...completed].sort(bySurah).map((e) => ({ entry: e, done: true })),
-    ...[...activeOnly].sort(bySurah).map((e) => ({ entry: e, done: false })),
+  const pieces: FocusTrackPiece[] = [
+    ...buildFocusPieces(completed, true),
+    ...buildFocusPieces(activeOnly, false),
   ];
 
-  if (items.length === 0) {
+  if (pieces.length === 0) {
     return <span className="text-zinc-400 dark:text-zinc-500">—</span>;
   }
 
@@ -106,27 +160,49 @@ function FocusTrackCombinedList({
   return (
     <>
       <span className="flex flex-col gap-0.5 text-[10px] leading-tight lg:hidden">
-        {items.map(({ entry: e, done }) => (
-          <span key={e.surahId} className={`inline-flex min-w-0 max-w-full items-baseline gap-0.5 ${rowClass(done)}`}>
-            <span className={FOCUS_BADGE_CLASS} title={`Juz ${e.juz}`}>
-              {e.juz}
+        {pieces.map((p) =>
+          p.kind === "juz" ? (
+            <span
+              key={`juz-${p.juzNum}-${p.done ? "d" : "a"}`}
+              className={`inline-flex min-w-0 max-w-full items-baseline gap-0.5 ${rowClass(p.done)}`}
+            >
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]" title={`Juz ${p.juzNum}`}>
+                {ordinalJuz(p.juzNum)} Juz
+              </span>
+              {p.done ? <FocusTrackCheckIcon className="mt-px shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
             </span>
-            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{e.name}</span>
-            {done ? <FocusTrackCheckIcon className="mt-px shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
-          </span>
-        ))}
+          ) : (
+            <span
+              key={p.entry.surahId}
+              className={`inline-flex min-w-0 max-w-full items-baseline gap-0.5 ${rowClass(p.done)}`}
+            >
+              <span className={FOCUS_BADGE_CLASS} title={`Juz ${p.entry.juz}`}>
+                {p.entry.juz}
+              </span>
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{p.entry.name}</span>
+              {p.done ? <FocusTrackCheckIcon className="mt-px shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
+            </span>
+          )
+        )}
       </span>
       <span className="hidden text-sm leading-relaxed lg:inline">
-        {items.map(({ entry: e, done }, i) => (
-          <Fragment key={e.surahId}>
+        {pieces.map((p, i) => (
+          <Fragment key={p.kind === "juz" ? `juz-${p.juzNum}-${p.done ? "d" : "a"}` : p.entry.surahId}>
             {i > 0 ? <span className="text-zinc-500">, </span> : null}
-            <span className={`inline-flex items-baseline gap-1 ${rowClass(done)}`}>
-              <span className={FOCUS_BADGE_CLASS} title={`Juz ${e.juz}`}>
-                {e.juz}
+            {p.kind === "juz" ? (
+              <span className={`inline-flex items-baseline gap-1 ${rowClass(p.done)}`} title={`Juz ${p.juzNum}`}>
+                <span>{ordinalJuz(p.juzNum)} Juz</span>
+                {p.done ? <FocusTrackCheckIcon className="shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
               </span>
-              <span>{e.name}</span>
-              {done ? <FocusTrackCheckIcon className="shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
-            </span>
+            ) : (
+              <span className={`inline-flex items-baseline gap-1 ${rowClass(p.done)}`}>
+                <span className={FOCUS_BADGE_CLASS} title={`Juz ${p.entry.juz}`}>
+                  {p.entry.juz}
+                </span>
+                <span>{p.entry.name}</span>
+                {p.done ? <FocusTrackCheckIcon className="shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
+              </span>
+            )}
           </Fragment>
         ))}
       </span>
@@ -152,6 +228,8 @@ type ProgressReport = {
 };
 
 type MainPanel = "chat" | "focus" | "goals" | "heatmap" | "stats";
+
+type ClearFocusTrack = "memorizing" | "revising" | "reciting";
 
 function addGoalsModalInitialFromPayload(goals: MyGoalsPayload | null): AddGoalsModalInitial {
   if (!goals) return null;
@@ -307,6 +385,26 @@ function panelTitle(p: MainPanel): string {
       return "Stats";
     default:
       return "Club";
+  }
+}
+
+function clearTrackModalLabels(track: ClearFocusTrack): { question: string; action: string } {
+  switch (track) {
+    case "memorizing":
+      return {
+        question: "Are you sure you want to clear your memorisation track?",
+        action: "Clear memorisation track",
+      };
+    case "revising":
+      return {
+        question: "Are you sure you want to clear your revision track?",
+        action: "Clear revision track",
+      };
+    case "reciting":
+      return {
+        question: "Are you sure you want to clear your recitation track?",
+        action: "Clear recitation track",
+      };
   }
 }
 
@@ -815,6 +913,11 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   const inviteCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [addGoalsOpen, setAddGoalsOpen] = useState(false);
   const [addGoalsKey, setAddGoalsKey] = useState(0);
+  const [clearTracksMenuOpen, setClearTracksMenuOpen] = useState(false);
+  const [clearTrackConfirm, setClearTrackConfirm] = useState<ClearFocusTrack | null>(null);
+  const [clearTrackBusy, setClearTrackBusy] = useState(false);
+  const [clearTrackError, setClearTrackError] = useState<string | null>(null);
+  const clearTracksRootRef = useRef<HTMLDivElement>(null);
 
   const loadMessages = useCallback(async () => {
     const res = await fetch("/api/messages");
@@ -980,8 +1083,53 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   }, [progress?.me?.goals]);
 
   useEffect(() => {
+    if (!clearTracksMenuOpen) return;
+    function onDoc(e: MouseEvent) {
+      const el = clearTracksRootRef.current;
+      if (el && !el.contains(e.target as Node)) setClearTracksMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [clearTracksMenuOpen]);
+
+  useEffect(() => {
+    if (panel !== "goals") setClearTracksMenuOpen(false);
+  }, [panel]);
+
+  async function confirmClearFocusTrack() {
+    if (!clearTrackConfirm) return;
+    setClearTrackBusy(true);
+    setClearTrackError(null);
+    try {
+      const res = await fetch("/api/member-progress/clear-track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track: clearTrackConfirm }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setClearTrackError(data.error ?? "Could not clear track.");
+        return;
+      }
+      setClearTrackConfirm(null);
+      await loadProgress();
+    } finally {
+      setClearTrackBusy(false);
+    }
+  }
+
+  useEffect(() => {
     if (!trajectoryYouAvailable && projectionScope === "you") setProjectionScope("all");
   }, [trajectoryYouAvailable, projectionScope]);
+
+  useEffect(() => {
+    if (!clearTrackConfirm) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !clearTrackBusy) setClearTrackConfirm(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [clearTrackConfirm, clearTrackBusy]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -1135,22 +1283,87 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
               youDisabled={!trajectoryYouAvailable}
             />
           ) : panel === "goals" ? (
-            <button
-              type="button"
-              disabled={addNewGoalsFullyBlocked}
-              title={
-                addNewGoalsFullyBlocked
-                  ? "Complete your goals in this track to set a new one!"
-                  : undefined
-              }
-              onClick={() => {
-                setAddGoalsKey((k) => k + 1);
-                setAddGoalsOpen(true);
-              }}
-              className="shrink-0 rounded-full border border-zinc-300 bg-zinc-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45 dark:border-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:opacity-40"
-            >
-              Add New Goals +
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                disabled={addNewGoalsFullyBlocked}
+                title={
+                  addNewGoalsFullyBlocked
+                    ? "Complete your goals in this track to set a new one!"
+                    : undefined
+                }
+                onClick={() => {
+                  setAddGoalsKey((k) => k + 1);
+                  setAddGoalsOpen(true);
+                }}
+                className="rounded-full border border-zinc-300 bg-zinc-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45 dark:border-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:opacity-40"
+              >
+                Add New Goals +
+              </button>
+              <div ref={clearTracksRootRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setClearTracksMenuOpen((o) => !o)}
+                  aria-expanded={clearTracksMenuOpen}
+                  aria-haspopup="menu"
+                  className="rounded-full border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  Clear Tracks
+                </button>
+                {clearTracksMenuOpen ? (
+                  <ul
+                    role="menu"
+                    className="absolute right-0 z-50 mt-1.5 min-w-[11rem] overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg ring-1 ring-black/[0.04] dark:border-zinc-600 dark:bg-zinc-900 dark:ring-white/[0.06]"
+                  >
+                    <li role="presentation">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
+                        onClick={() => {
+                          setClearTracksMenuOpen(false);
+                          setClearTrackError(null);
+                          setClearTrackConfirm("memorizing");
+                        }}
+                      >
+                        <IconTrackMemorising className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        Memorising
+                      </button>
+                    </li>
+                    <li role="presentation">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
+                        onClick={() => {
+                          setClearTracksMenuOpen(false);
+                          setClearTrackError(null);
+                          setClearTrackConfirm("revising");
+                        }}
+                      >
+                        <IconTrackRevising className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                        Revising
+                      </button>
+                    </li>
+                    <li role="presentation">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
+                        onClick={() => {
+                          setClearTracksMenuOpen(false);
+                          setClearTrackError(null);
+                          setClearTrackConfirm("reciting");
+                        }}
+                      >
+                        <IconTrackReciting className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        Reciting
+                      </button>
+                    </li>
+                  </ul>
+                ) : null}
+              </div>
+            </div>
           ) : (
             <GroupMemberStack
               members={groupMembers}
@@ -1577,6 +1790,73 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           onNavigate={() => setMobileNavOpen(false)}
         />
       </aside>
+
+      {clearTrackConfirm ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="presentation">
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              if (!clearTrackBusy) setClearTrackConfirm(null);
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-track-dialog-title"
+            className="relative z-10 w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <h2
+              id="clear-track-dialog-title"
+              className="text-base font-semibold text-zinc-900 dark:text-zinc-50"
+            >
+              {clearTrackModalLabels(clearTrackConfirm).question}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+              {clearTrackConfirm === "memorizing" ? (
+                <>
+                  This clears your memorising and revising activity on{" "}
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">Current focus</span> (revising only
+                  applies to surahs you’ve memorised) and removes every surah from your memorised list — your{" "}
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">% Quran</span> goes back to{" "}
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">0%</span>. My goals targets stay as they
+                  are until you change them.
+                </>
+              ) : (
+                <>
+                  This removes your active and completed surahs for this track on{" "}
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">Current focus</span>. It does not change
+                  your % Quran or My goals targets.
+                </>
+              )}
+            </p>
+            {clearTrackError ? (
+              <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+                {clearTrackError}
+              </p>
+            ) : null}
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <button
+                type="button"
+                disabled={clearTrackBusy}
+                onClick={() => setClearTrackConfirm(null)}
+                className="rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={clearTrackBusy}
+                onClick={() => void confirmClearFocusTrack()}
+                className="rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-600 dark:hover:bg-red-500"
+              >
+                {clearTrackBusy ? "Clearing…" : clearTrackModalLabels(clearTrackConfirm).action}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <OnboardingModal
         open={Boolean(progress?.me?.needsOnboarding)}

@@ -119,7 +119,9 @@ export async function POST(request: Request) {
     }
   }
 
-  const memorizing_surahs = sortUnique([...already, ...goalMem]);
+  /** Active “memorising” on Current focus = goal targets only. Already-memorised surahs go to completed_* so they show green + ✓. */
+  const memorizing_surahs = goalMem;
+  const completed_memorizing_surahs = already;
   const revising_surahs = goalRev;
   const reciting_surahs = goalRec;
   const memEnd = targetEndFromSpan(body.memorize_span);
@@ -130,6 +132,7 @@ export async function POST(request: Request) {
     {
       member_id: member.id,
       memorizing_surahs,
+      completed_memorizing_surahs,
       revising_surahs,
       reciting_surahs,
       updated_at: new Date().toISOString(),
@@ -186,13 +189,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: gErr.message }, { status: 500 });
   }
 
-  if (memorizing_surahs.length > 0) {
-    const summary = formatProgressEventSummary("memorizing", memorizing_surahs);
+  const onboardingMemLog = sortUnique([...already, ...goalMem]);
+  if (onboardingMemLog.length > 0) {
+    const summary = formatProgressEventSummary("memorizing", onboardingMemLog);
     const { error: peErr } = await admin.from("progress_events").insert({
       member_id: member.id,
       event_kind: "memorizing",
       juz: null,
-      surah: memorizing_surahs.join(","),
+      surah: onboardingMemLog.join(","),
       summary: `${summary} (onboarding)`,
       source_message_id: null,
     });
