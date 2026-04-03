@@ -41,6 +41,9 @@ create table if not exists public.member_progress (
   memorizing_surahs int[] not null default '{}',
   revising_surahs int[] not null default '{}',
   reciting_surahs int[] not null default '{}',
+  completed_memorizing_surahs int[] not null default '{}',
+  completed_revising_surahs int[] not null default '{}',
+  completed_reciting_surahs int[] not null default '{}',
   updated_at timestamptz not null default now()
 );
 

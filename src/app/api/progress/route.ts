@@ -1,8 +1,31 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildMemorizationTimeline } from "@/lib/progress-aggregate";
+import { buildMemorizationTimeline, type MemberProfile } from "@/lib/progress-aggregate";
 import { juzWhereSurahStarts, percentQuranFromSurahIds, surahName } from "@/lib/quran";
+
+function formatStatusLogLine(kind: string, summary: string | null | undefined, surahCsv: string | null | undefined): string {
+  const trimmed = summary?.trim();
+  if (trimmed) return trimmed;
+  const ids = (surahCsv ?? "")
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => n >= 1 && n <= 114);
+  const names = ids.map((id) => surahName(id)).join(", ");
+  const label =
+    kind === "memorizing"
+      ? "Memorising"
+      : kind === "revising"
+        ? "Revising"
+        : kind === "reciting"
+          ? "Reciting"
+          : kind === "completed"
+            ? "Completed"
+            : "Activity";
+  if (!names) return `${label} (update)`;
+  const surahPhrases = names.split(", ").map((n) => `Surah ${n}`).join(", ");
+  return `${label} ${surahPhrases}`;
+}
 
 const MEMBER_COOKIE = "alif_member_id";
 
@@ -126,7 +149,7 @@ export async function GET() {
 
   const { data: members, error: memError } = await admin
     .from("members")
-    .select("id, display_name, memorized_surah_ids");
+    .select("id, display_name, memorized_surah_ids, created_at");
 
   if (memError) {
     return NextResponse.json({ error: memError.message }, { status: 500 });
@@ -144,7 +167,16 @@ export async function GET() {
       created_at: row.created_at,
     })) ?? [];
 
-  const { clubSeries, projection, memberTrajectories } = buildMemorizationTimeline(flat);
+  const memberProfiles: MemberProfile[] = (members ?? []).map((m) => ({
+    member_id: m.id,
+    display_name: m.display_name,
+    memorized_surah_ids: ((m.memorized_surah_ids as number[] | null) ?? []).filter(
+      (n) => n >= 1 && n <= 114
+    ),
+    created_at: m.created_at as string,
+  }));
+
+  const { clubSeries, projection, memberTrajectories } = buildMemorizationTimeline(flat, memberProfiles);
 
   const leaderboard = (members ?? []).map((m) => ({
     member_id: m.id,
@@ -154,22 +186,38 @@ export async function GET() {
   leaderboard.sort((a, b) => b.pct_quran - a.pct_quran || a.display_name.localeCompare(b.display_name));
 
   const { data: mpRows, error: mpError } = await admin.from("member_progress").select(
-    "member_id, memorizing_surahs, revising_surahs, reciting_surahs, updated_at"
+    "member_id, memorizing_surahs, revising_surahs, reciting_surahs, completed_memorizing_surahs, completed_revising_surahs, completed_reciting_surahs, updated_at"
   );
 
   if (mpError) {
     return NextResponse.json({ error: mpError.message }, { status: 500 });
   }
 
+  type MpRow = {
+    memorizing_surahs: number[];
+    revising_surahs: number[];
+    reciting_surahs: number[];
+    completed_memorizing_surahs: number[];
+    completed_revising_surahs: number[];
+    completed_reciting_surahs: number[];
+  };
+
   const mpByMember = new Map(
-    (mpRows ?? []).map((r) => [
-      r.member_id,
-      {
-        memorizing_surahs: (r.memorizing_surahs as number[] | null) ?? [],
-        revising_surahs: (r.revising_surahs as number[] | null) ?? [],
-        reciting_surahs: (r.reciting_surahs as number[] | null) ?? [],
-      },
-    ])
+    (mpRows ?? []).map((r) => {
+      const x = r as Record<string, unknown>;
+      const nums = (k: string) => ((x[k] as number[] | null | undefined) ?? []) as number[];
+      return [
+        r.member_id,
+        {
+          memorizing_surahs: (r.memorizing_surahs as number[] | null) ?? [],
+          revising_surahs: (r.revising_surahs as number[] | null) ?? [],
+          reciting_surahs: (r.reciting_surahs as number[] | null) ?? [],
+          completed_memorizing_surahs: nums("completed_memorizing_surahs"),
+          completed_revising_surahs: nums("completed_revising_surahs"),
+          completed_reciting_surahs: nums("completed_reciting_surahs"),
+        } satisfies MpRow,
+      ] as [string, MpRow];
+    })
   );
 
   const dashboard = (members ?? []).map((m) => {
@@ -181,6 +229,9 @@ export async function GET() {
       revising: dashboardSurahEntries(mp?.revising_surahs ?? []),
       memorising: dashboardSurahEntries(mp?.memorizing_surahs ?? []),
       reciting: dashboardSurahEntries(mp?.reciting_surahs ?? []),
+      completed_memorising: dashboardSurahEntries(mp?.completed_memorizing_surahs ?? []),
+      completed_revising: dashboardSurahEntries(mp?.completed_revising_surahs ?? []),
+      completed_reciting: dashboardSurahEntries(mp?.completed_reciting_surahs ?? []),
       pct_quran: pctQuran,
     };
   });
@@ -199,31 +250,37 @@ export async function GET() {
     daysLeft: number;
   };
 
+  type GoalsPayload = {
+    progressAnchorYmd: string;
+    memorizing: GoalTrack;
+    revising: GoalTrack;
+    reciting: GoalTrack;
+  };
+
   let me: {
     needsOnboarding: boolean;
-    goals: {
-      memorizing: GoalTrack;
-      revising: GoalTrack;
-      reciting: GoalTrack;
-    } | null;
+    /** Surahs already memorised (same baseline as onboarding step 1). */
+    memorized_surah_ids: number[];
+    goals: GoalsPayload | null;
+    statusLog: { line: string; dateIso: string; dateDisplay: string }[];
   } | null = null;
 
   if (selfId) {
     let needsOnboarding = false;
-    let goalsPayload: {
-      memorizing: GoalTrack;
-      revising: GoalTrack;
-      reciting: GoalTrack;
-    } | null = null;
+    let goalsPayload: GoalsPayload | null = null;
 
     const { data: selfRow, error: selfErr } = await admin
       .from("members")
-      .select("onboarding_completed_at")
+      .select("onboarding_completed_at, memorized_surah_ids")
       .eq("id", selfId)
       .maybeSingle();
 
+    let memorized_surah_ids: number[] = [];
     if (!selfErr && selfRow) {
       needsOnboarding = selfRow.onboarding_completed_at == null;
+      memorized_surah_ids = ((selfRow.memorized_surah_ids as number[] | null) ?? [])
+        .filter((n) => n >= 1 && n <= 114)
+        .sort((a, b) => a - b);
     }
 
     const { data: goalRow, error: goalErr } = await admin
@@ -242,7 +299,16 @@ export async function GET() {
       const recEnd =
         (typeof r.recite_target_end === "string" ? r.recite_target_end : undefined) ?? legacy;
       if (mEnd && revEnd && recEnd) {
+        const rawUpdated = goalRow.updated_at as string | undefined;
+        let progressAnchorYmd = "";
+        if (rawUpdated) {
+          const ad = new Date(rawUpdated);
+          if (!Number.isNaN(ad.getTime())) {
+            progressAnchorYmd = `${ad.getUTCFullYear()}-${String(ad.getUTCMonth() + 1).padStart(2, "0")}-${String(ad.getUTCDate()).padStart(2, "0")}`;
+          }
+        }
         goalsPayload = {
+          progressAnchorYmd,
           memorizing: {
             entries: goalEntries((goalRow.memorizing_surah_ids as number[] | null) ?? []),
             targetEnd: mEnd,
@@ -262,7 +328,30 @@ export async function GET() {
       }
     }
 
-    me = { needsOnboarding, goals: goalsPayload };
+    const { data: logRows, error: logErr } = await admin
+      .from("progress_events")
+      .select("event_kind, summary, surah, created_at")
+      .eq("member_id", selfId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    const statusLog =
+      !logErr && logRows
+        ? logRows.map((r) => ({
+            line: formatStatusLogLine(
+              r.event_kind as string,
+              r.summary as string | null,
+              r.surah as string | null
+            ),
+            dateIso: r.created_at as string,
+            dateDisplay: new Date(r.created_at as string).toLocaleString(undefined, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            }),
+          }))
+        : [];
+
+    me = { needsOnboarding, memorized_surah_ids, goals: goalsPayload, statusLog };
   }
 
   return NextResponse.json({

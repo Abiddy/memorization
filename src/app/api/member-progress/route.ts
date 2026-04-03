@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { formatProgressChatLine, formatProgressEventSummary, surahName } from "@/lib/quran";
+import { formatProgressChatLine, formatProgressEventSummary } from "@/lib/quran";
 
 const COOKIE = "alif_member_id";
 
@@ -30,22 +30,6 @@ const PostBodySchema = z.discriminatedUnion("track", [
   RevisingBodySchema,
   RecitingBodySchema,
 ]);
-
-/** Matrix: merge surahs onto a track (add) or drop them from that track (remove). */
-const MatrixPatchSchema = z.object({
-  track: z.enum(["memorizing", "revising", "reciting"]),
-  surah_ids: z.array(z.number().int().min(1).max(114)).min(1),
-  action: z.enum(["add", "remove"]).optional().default("add"),
-});
-
-function mergeUniqueSorted(a: number[], b: number[]): number[] {
-  return [...new Set([...a, ...b])].sort((x, y) => x - y);
-}
-
-function removeIdsFromSorted(base: number[], toRemove: number[]): number[] {
-  const drop = new Set(toRemove);
-  return base.filter((id) => !drop.has(id));
-}
 
 type MemberProgressRow = {
   member_id: string;
@@ -185,116 +169,13 @@ export async function POST(request: Request) {
   return NextResponse.json({ message: msg });
 }
 
-export async function PATCH(request: Request) {
-  const cookieStore = await cookies();
-  const memberId = cookieStore.get(COOKIE)?.value;
-  if (!memberId) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
-
-  let json: unknown;
-  try {
-    json = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  const parsed = MatrixPatchSchema.safeParse(json);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
-
-  const admin = createAdminClient();
-
-  const { data: member, error: memberError } = await admin
-    .from("members")
-    .select("id, memorized_surah_ids")
-    .eq("id", memberId)
-    .maybeSingle();
-
-  if (memberError || !member) {
-    return NextResponse.json({ error: "Member not found" }, { status: 401 });
-  }
-
-  const { data: existing } = await admin
-    .from("member_progress")
-    .select("member_id, memorizing_surahs, revising_surahs, reciting_surahs")
-    .eq("member_id", member.id)
-    .maybeSingle();
-
-  const base: MemberProgressRow = {
-    member_id: member.id,
-    memorizing_surahs: (existing?.memorizing_surahs as number[] | null) ?? [],
-    revising_surahs: (existing?.revising_surahs as number[] | null) ?? [],
-    reciting_surahs: (existing?.reciting_surahs as number[] | null) ?? [],
-  };
-
-  const { track, surah_ids, action } = parsed.data;
-  const incoming = [...new Set(surah_ids)];
-
-  const nextRow: MemberProgressRow = { ...base };
-
-  if (action === "add") {
-    if (track === "memorizing") {
-      nextRow.memorizing_surahs = mergeUniqueSorted(base.memorizing_surahs, incoming);
-    } else if (track === "revising") {
-      nextRow.revising_surahs = mergeUniqueSorted(base.revising_surahs ?? [], incoming);
-    } else {
-      nextRow.reciting_surahs = mergeUniqueSorted(base.reciting_surahs ?? [], incoming);
-    }
-  } else {
-    if (track === "memorizing") {
-      nextRow.memorizing_surahs = removeIdsFromSorted(base.memorizing_surahs, incoming);
-    } else if (track === "revising") {
-      nextRow.revising_surahs = removeIdsFromSorted(base.revising_surahs ?? [], incoming);
-    } else {
-      nextRow.reciting_surahs = removeIdsFromSorted(base.reciting_surahs ?? [], incoming);
-    }
-  }
-
-  const { error: upError } = await admin
-    .from("member_progress")
-    .upsert(
-      {
-        ...nextRow,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "member_id" }
-    );
-
-  if (upError) {
-    return NextResponse.json({ error: upError.message }, { status: 500 });
-  }
-
-  if (track === "memorizing") {
-    const prev = (member.memorized_surah_ids as number[] | null) ?? [];
-    const mergedMem =
-      action === "add"
-        ? mergeUniqueSorted(prev, incoming)
-        : removeIdsFromSorted(prev, incoming);
-    const { error: memUp } = await admin.from("members").update({ memorized_surah_ids: mergedMem }).eq("id", member.id);
-    if (memUp) {
-      return NextResponse.json({ error: memUp.message }, { status: 500 });
-    }
-
-    const sortedIncoming = [...incoming].sort((a, b) => a - b);
-    const sortedIds = sortedIncoming.join(",");
-    const summary =
-      action === "add"
-        ? `${formatProgressEventSummary("memorizing", incoming)} (matrix)`
-        : `Removed from memorising (matrix): ${sortedIncoming.map((id) => surahName(id)).join(", ")}`;
-    const { error: peError } = await admin.from("progress_events").insert({
-      member_id: member.id,
-      event_kind: "memorizing",
-      juz: null,
-      surah: sortedIds,
-      summary,
-      source_message_id: null,
-    });
-    if (peError) {
-      return NextResponse.json({ error: peError.message }, { status: 500 });
-    }
-  }
-
-  return NextResponse.json({ ok: true });
+/** Surah matrix is display-only; updates go through chat (“I am…”) or My goals. */
+export async function PATCH() {
+  return NextResponse.json(
+    {
+      error:
+        "The Surah matrix is view-only. Update your tracks from the chat picker (I am…) or complete goals on My goals.",
+    },
+    { status: 403 }
+  );
 }

@@ -45,6 +45,14 @@ type EventRow = {
   created_at: string;
 };
 
+/** One row per club member — used so everyone appears on memorisation charts. */
+export type MemberProfile = {
+  member_id: string;
+  display_name: string;
+  memorized_surah_ids: number[];
+  created_at: string;
+};
+
 function kindOf(e: EventRow): string {
   return e.event_kind ?? "completed";
 }
@@ -119,10 +127,15 @@ function projectionFromSeries<T extends { date: string }>(
 }
 
 /**
- * Timeline from memorising events only: union surahs per member over time (order ≠ completion).
- * Revising events do not add to memorised coverage.
+ * Club % series from memorising chat/onboarding events (union of surahs per member).
+ * Per-member trajectories: **completed memorisation** = distinct surahs that count toward % Quran,
+ * replayed from `memorizing` progress events, then aligned to current `memorized_surah_ids` so every
+ * member appears (flat line at 0 if no data).
  */
-export function buildMemorizationTimeline(events: EventRow[]): {
+export function buildMemorizationTimeline(
+  events: EventRow[],
+  memberProfiles: MemberProfile[]
+): {
   clubSeries: ClubPoint[];
   projection: ProjectionPoint[];
   memberTrajectories: MemberTrajectory[];
@@ -132,6 +145,9 @@ export function buildMemorizationTimeline(events: EventRow[]): {
   );
 
   const nameByMember = new Map<string, string>();
+  for (const p of memberProfiles) {
+    nameByMember.set(p.member_id, p.display_name);
+  }
   const memorizedByMember = new Map<string, Set<number>>();
   const dayToClubPct = new Map<string, number>();
   /** memberId -> day -> max distinct memorised surah count that calendar day. */
@@ -179,30 +195,49 @@ export function buildMemorizationTimeline(events: EventRow[]): {
         }))
       : [];
 
+  const todayUtc = new Date().toISOString().slice(0, 10);
+
   const memberTrajectories: MemberTrajectory[] = [];
-  for (const [memberId, displayName] of nameByMember) {
+  for (const m of memberProfiles) {
+    const memberId = m.member_id;
+    const displayName = m.display_name;
+    const dbCount = [
+      ...new Set((m.memorized_surah_ids ?? []).filter((n) => Number.isFinite(n) && n >= 1 && n <= 114)),
+    ].length;
+    const createdDay = dayKey(m.created_at);
+
     const dayMap = memberDayToSurahs.get(memberId);
-    if (!dayMap || dayMap.size === 0) continue;
-    const recorded: MemberSeriesPoint[] = Array.from(dayMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, surahs]) => ({ date, surahs }));
-    const memberProj: MemberProjectionPoint[] =
-      recorded.length >= 2
-        ? projectionFromSeries(recorded, (p) => p.surahs, {
-            min: 0,
-            max: 114,
-            roundToInt: true,
-          }).map((p) => ({
-            date: p.date,
-            surahs: p.value,
-            projected: true,
-          }))
+    let recorded: MemberSeriesPoint[] =
+      dayMap && dayMap.size > 0
+        ? Array.from(dayMap.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, surahs]) => ({ date, surahs }))
         : [];
+
+    if (recorded.length > 0 && recorded[0]!.date > createdDay) {
+      recorded = [{ date: createdDay, surahs: 0 }, ...recorded];
+    }
+
+    if (recorded.length === 0) {
+      recorded = [
+        { date: createdDay, surahs: 0 },
+        { date: todayUtc, surahs: dbCount },
+      ];
+    } else {
+      const last = recorded[recorded.length - 1]!;
+      const finalCount = Math.max(last.surahs, dbCount);
+      if (last.date < todayUtc) {
+        recorded = [...recorded, { date: todayUtc, surahs: finalCount }];
+      } else {
+        recorded = [...recorded.slice(0, -1), { date: last.date, surahs: finalCount }];
+      }
+    }
+
     memberTrajectories.push({
       member_id: memberId,
       display_name: displayName,
       recorded,
-      projection: memberProj,
+      projection: [],
     });
   }
   memberTrajectories.sort((a, b) => a.display_name.localeCompare(b.display_name));

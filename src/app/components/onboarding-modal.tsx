@@ -20,12 +20,15 @@ const SURAH_IDS = Array.from({ length: 114 }, (_, i) => i + 1);
 
 type GoalTimeSpan = "7d" | "1m" | "2m";
 
-const GOAL_SPAN_SELECT_CLASS =
-  "shrink-0 max-w-[9rem] cursor-pointer rounded-lg border border-zinc-200 bg-white py-1.5 pl-2 pr-1 text-xs font-medium text-zinc-900 outline-none ring-violet-500/30 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100";
+const GOAL_SPAN_OPTIONS: { value: GoalTimeSpan; label: string }[] = [
+  { value: "7d", label: "7 days" },
+  { value: "1m", label: "1 month" },
+  { value: "2m", label: "2 months" },
+];
 
 type SurahRow = { id: number; name: string; juz: number };
 
-function GoalTimeframeSelect({
+function GoalTimeframeMenu({
   value,
   onChange,
   id,
@@ -34,18 +37,89 @@ function GoalTimeframeSelect({
   onChange: (v: GoalTimeSpan) => void;
   id: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listId = `${id}-listbox`;
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const currentLabel = GOAL_SPAN_OPTIONS.find((o) => o.value === value)?.label ?? "7 days";
+
   return (
-    <select
-      id={id}
-      aria-label="Goal timeframe"
-      value={value}
-      onChange={(e) => onChange(e.target.value as GoalTimeSpan)}
-      className={GOAL_SPAN_SELECT_CLASS}
-    >
-      <option value="7d">7 days</option>
-      <option value="1m">1 month</option>
-      <option value="2m">2 months</option>
-    </select>
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        id={id}
+        aria-label="Goal timeframe"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white py-2 pl-3 pr-2 text-xs font-medium text-zinc-900 shadow-sm outline-none ring-violet-500/25 transition hover:border-zinc-300 hover:bg-zinc-50 focus-visible:ring-2 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-500 dark:hover:bg-zinc-800/80"
+      >
+        <span className="tabular-nums">{currentLabel}</span>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className={`shrink-0 text-zinc-400 transition-transform dark:text-zinc-500 ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        >
+          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open ? (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute right-0 z-[100] mt-1.5 min-w-[10.5rem] overflow-hidden rounded-xl border border-zinc-200/90 bg-white py-1 shadow-lg ring-1 ring-black/[0.04] dark:border-zinc-600 dark:bg-zinc-900 dark:ring-white/[0.06]"
+        >
+          {GOAL_SPAN_OPTIONS.map((o) => {
+            const sel = o.value === value;
+            return (
+              <li key={o.value} role="presentation">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={sel}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm transition ${
+                    sel
+                      ? "bg-violet-50 font-medium text-violet-900 dark:bg-violet-950/60 dark:text-violet-100"
+                      : "text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
+                  }`}
+                >
+                  {o.label}
+                  {sel ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" className="shrink-0 text-violet-600 dark:text-violet-400" aria-hidden>
+                      <path
+                        fill="currentColor"
+                        d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
+                      />
+                    </svg>
+                  ) : (
+                    <span className="w-4 shrink-0" aria-hidden />
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -258,7 +332,7 @@ function GoalMultiSelect({
               {hint ? <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{hint}</p> : null}
             </div>
           </div>
-          <GoalTimeframeSelect id={timeframeSelectId} value={timeSpan} onChange={onTimeSpanChange} />
+          <GoalTimeframeMenu id={timeframeSelectId} value={timeSpan} onChange={onTimeSpanChange} />
         </div>
         <p className="mt-3 text-center text-xs text-zinc-500 dark:text-zinc-400">
           {emptyMessage ?? "No surahs to show here."}
@@ -277,7 +351,7 @@ function GoalMultiSelect({
             {hint ? <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{hint}</p> : null}
           </div>
         </div>
-        <GoalTimeframeSelect id={timeframeSelectId} value={timeSpan} onChange={onTimeSpanChange} />
+        <GoalTimeframeMenu id={timeframeSelectId} value={timeSpan} onChange={onTimeSpanChange} />
       </div>
       <input
         type="search"
@@ -331,6 +405,267 @@ function GoalMultiSelect({
   );
 }
 
+function inferGoalTimeSpan(targetEndYmd: string): GoalTimeSpan {
+  const [y, m, d] = targetEndYmd.split("-").map(Number);
+  if (!y || !m || !d) return "7d";
+  const end = Date.UTC(y, m - 1, d);
+  const t = new Date();
+  const start = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
+  const days = Math.max(0, Math.round((end - start) / 86400000));
+  if (days <= 10) return "7d";
+  if (days <= 45) return "1m";
+  return "2m";
+}
+
+function SetGoalsStep2Pickers({
+  idPrefix,
+  already,
+  goalMem,
+  goalRev,
+  goalRec,
+  spanMem,
+  spanRev,
+  spanRec,
+  onToggleMem,
+  onToggleRev,
+  onToggleRec,
+  setSpanMem,
+  setSpanRev,
+  setSpanRec,
+}: {
+  idPrefix: string;
+  already: Set<number>;
+  goalMem: Set<number>;
+  goalRev: Set<number>;
+  goalRec: Set<number>;
+  spanMem: GoalTimeSpan;
+  spanRev: GoalTimeSpan;
+  spanRec: GoalTimeSpan;
+  onToggleMem: (id: number) => void;
+  onToggleRev: (id: number) => void;
+  onToggleRec: (id: number) => void;
+  setSpanMem: (v: GoalTimeSpan) => void;
+  setSpanRev: (v: GoalTimeSpan) => void;
+  setSpanRec: (v: GoalTimeSpan) => void;
+}) {
+  const allRows = useMemo(() => buildAllSurahRows(), []);
+  const optionsMemorize = useMemo(() => allRows.filter((r) => !already.has(r.id)), [allRows, already]);
+  const optionsRevise = useMemo(() => allRows.filter((r) => already.has(r.id)), [allRows, already]);
+
+  return (
+    <div className="space-y-4">
+      <GoalMultiSelect
+        label="I will memorise"
+        hint="Surahs you haven't memorised yet"
+        icon={<IconTrackMemorising className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
+        options={optionsMemorize}
+        selected={goalMem}
+        onToggle={onToggleMem}
+        timeSpan={spanMem}
+        onTimeSpanChange={setSpanMem}
+        timeframeSelectId={`${idPrefix}-span-mem`}
+      />
+      <GoalMultiSelect
+        label="I will revise"
+        hint={already.size === 0 ? "Mark surahs as memorised first (onboarding or matrix)." : "Only surahs you’ve already memorised."}
+        icon={<IconTrackRevising className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
+        options={optionsRevise}
+        selected={goalRev}
+        onToggle={onToggleRev}
+        emptyMessage="No memorised surahs yet — add them elsewhere first to choose revision targets."
+        timeSpan={spanRev}
+        onTimeSpanChange={setSpanRev}
+        timeframeSelectId={`${idPrefix}-span-rev`}
+      />
+      <GoalMultiSelect
+        label="I will recite"
+        hint="Any surahs you want to recite during this period."
+        icon={<IconTrackReciting className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
+        options={allRows}
+        selected={goalRec}
+        onToggle={onToggleRec}
+        timeSpan={spanRec}
+        onTimeSpanChange={setSpanRec}
+        timeframeSelectId={`${idPrefix}-span-rec`}
+      />
+    </div>
+  );
+}
+
+export type AddGoalsModalInitial = {
+  memorizing: { surahIds: number[]; targetEnd: string };
+  revising: { surahIds: number[]; targetEnd: string };
+  reciting: { surahIds: number[]; targetEnd: string };
+} | null;
+
+/**
+ * Same surah pickers as onboarding step 2 (“Set your goals”). POSTs to /api/onboarding with current memorised list.
+ */
+export function AddGoalsModal({
+  memorizedSurahIds,
+  initialGoals,
+  onClose,
+  onSaved,
+}: {
+  memorizedSurahIds: number[];
+  initialGoals: AddGoalsModalInitial;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const already = useMemo(
+    () => new Set(memorizedSurahIds.filter((n) => n >= 1 && n <= 114)),
+    [memorizedSurahIds]
+  );
+  const idPrefix = "add-goals";
+
+  const [goalMem, setGoalMem] = useState(() => new Set(initialGoals?.memorizing.surahIds ?? []));
+  const [goalRev, setGoalRev] = useState(() => new Set(initialGoals?.revising.surahIds ?? []));
+  const [goalRec, setGoalRec] = useState(() => new Set(initialGoals?.reciting.surahIds ?? []));
+  const [spanMem, setSpanMem] = useState<GoalTimeSpan>(() =>
+    initialGoals ? inferGoalTimeSpan(initialGoals.memorizing.targetEnd) : "7d"
+  );
+  const [spanRev, setSpanRev] = useState<GoalTimeSpan>(() =>
+    initialGoals ? inferGoalTimeSpan(initialGoals.revising.targetEnd) : "7d"
+  );
+  const [spanRec, setSpanRec] = useState<GoalTimeSpan>(() =>
+    initialGoals ? inferGoalTimeSpan(initialGoals.reciting.targetEnd) : "7d"
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleIn = useCallback((setter: Dispatch<SetStateAction<Set<number>>>, id: number) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    setGoalMem((prev) => {
+      const next = new Set([...prev].filter((id) => !already.has(id)));
+      return next.size === prev.size && [...prev].every((id) => next.has(id)) ? prev : next;
+    });
+    setGoalRev((prev) => {
+      const next = new Set([...prev].filter((id) => already.has(id)));
+      return next.size === prev.size && [...prev].every((id) => next.has(id)) ? prev : next;
+    });
+  }, [already]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !submitting) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const alreadySorted = [...already].sort((a, b) => a - b);
+      const body = {
+        already_memorized_surah_ids: alreadySorted,
+        goal_memorize_surah_ids: [...goalMem].sort((a, b) => a - b),
+        goal_revise_surah_ids: [...goalRev].sort((a, b) => a - b),
+        goal_recite_surah_ids: [...goalRec].sort((a, b) => a - b),
+        memorize_span: spanMem,
+        revise_span: spanRev,
+        recite_span: spanRec,
+      };
+      const res = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong.");
+        return;
+      }
+      onSaved();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const titleId = "add-goals-modal-title";
+
+  const node = (
+    <div className="pointer-events-auto fixed inset-0 z-[210] flex items-end justify-center p-3 sm:items-center sm:p-6">
+      <button
+        type="button"
+        aria-label="Close"
+        className="absolute inset-0 bg-black/50"
+        onClick={() => {
+          if (!submitting) onClose();
+        }}
+      />
+      <div
+        role="dialog"
+        aria-modal
+        aria-labelledby={titleId}
+        className="relative z-10 flex max-h-[min(88vh,40rem)] w-full max-w-lg min-h-0 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800 sm:px-5 sm:py-4">
+          <h2 id={titleId} className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Set your goals
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Pick surahs per track and a timeframe for each. This updates My goals and Current focus.
+          </p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          <SetGoalsStep2Pickers
+            idPrefix={idPrefix}
+            already={already}
+            goalMem={goalMem}
+            goalRev={goalRev}
+            goalRec={goalRec}
+            spanMem={spanMem}
+            spanRev={spanRev}
+            spanRec={spanRec}
+            onToggleMem={(id) => toggleIn(setGoalMem, id)}
+            onToggleRev={(id) => toggleIn(setGoalRev, id)}
+            onToggleRec={(id) => toggleIn(setGoalRec, id)}
+            setSpanMem={setSpanMem}
+            setSpanRev={setSpanRev}
+            setSpanRec={setSpanRec}
+          />
+          {error ? (
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-2 border-t border-zinc-100 px-4 py-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-5">
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={onClose}
+            className="text-sm font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => void submit()}
+            className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-violet-600 dark:hover:bg-violet-500"
+          >
+            {submitting ? "Saving…" : "Save goals"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(node, document.body);
+}
+
 function OnboardingWizard({ onDone, idPrefix }: { onDone: () => void; idPrefix: string }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [already, setAlready] = useState<Set<number>>(new Set());
@@ -343,8 +678,6 @@ function OnboardingWizard({ onDone, idPrefix }: { onDone: () => void; idPrefix: 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const allRows = useMemo(() => buildAllSurahRows(), []);
-
   const toggleAlready = useCallback((id: number) => {
     setAlready((prev) => {
       const next = new Set(prev);
@@ -353,9 +686,6 @@ function OnboardingWizard({ onDone, idPrefix }: { onDone: () => void; idPrefix: 
       return next;
     });
   }, []);
-
-  const optionsMemorize = useMemo(() => allRows.filter((r) => !already.has(r.id)), [allRows, already]);
-  const optionsRevise = useMemo(() => allRows.filter((r) => already.has(r.id)), [allRows, already]);
 
   useEffect(() => {
     setGoalMem((prev) => {
@@ -430,42 +760,22 @@ function OnboardingWizard({ onDone, idPrefix }: { onDone: () => void; idPrefix: 
           {step === 1 ? (
             <AlreadyMemorisedList selected={already} onToggle={toggleAlready} />
           ) : (
-            <div className="space-y-4">
-              <GoalMultiSelect
-                label="I will memorise"
-                hint="Surahs you haven't memorised yet"
-                icon={<IconTrackMemorising className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
-                options={optionsMemorize}
-                selected={goalMem}
-                onToggle={(id) => toggleIn(setGoalMem, id)}
-                timeSpan={spanMem}
-                onTimeSpanChange={setSpanMem}
-                timeframeSelectId={`${idPrefix}-span-mem`}
-              />
-              <GoalMultiSelect
-                label="I will revise"
-                hint={already.size === 0 ? "Select surahs in step 1 first." : "Only surahs you’ve already memorised."}
-                icon={<IconTrackRevising className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
-                options={optionsRevise}
-                selected={goalRev}
-                onToggle={(id) => toggleIn(setGoalRev, id)}
-                emptyMessage="Tick surahs you’ve already memorised in step 1 to choose revision targets."
-                timeSpan={spanRev}
-                onTimeSpanChange={setSpanRev}
-                timeframeSelectId={`${idPrefix}-span-rev`}
-              />
-              <GoalMultiSelect
-                label="I will recite"
-                hint="Any surahs you want to recite during this period."
-                icon={<IconTrackReciting className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
-                options={allRows}
-                selected={goalRec}
-                onToggle={(id) => toggleIn(setGoalRec, id)}
-                timeSpan={spanRec}
-                onTimeSpanChange={setSpanRec}
-                timeframeSelectId={`${idPrefix}-span-rec`}
-              />
-            </div>
+            <SetGoalsStep2Pickers
+              idPrefix={idPrefix}
+              already={already}
+              goalMem={goalMem}
+              goalRev={goalRev}
+              goalRec={goalRec}
+              spanMem={spanMem}
+              spanRev={spanRev}
+              spanRec={spanRec}
+              onToggleMem={(id) => toggleIn(setGoalMem, id)}
+              onToggleRev={(id) => toggleIn(setGoalRev, id)}
+              onToggleRec={(id) => toggleIn(setGoalRec, id)}
+              setSpanMem={setSpanMem}
+              setSpanRev={setSpanRev}
+              setSpanRec={setSpanRec}
+            />
           )}
 
           {error ? (
@@ -520,67 +830,120 @@ function OnboardingWizard({ onDone, idPrefix }: { onDone: () => void; idPrefix: 
   );
 }
 
-export function OnboardingResumeSheet({ onDone }: { onDone: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-
+function AddGoalsBarChevron({ expanded }: { expanded: boolean }) {
   return (
-    <div className="shrink-0 border-t border-zinc-200 bg-zinc-50/90 pb-[env(safe-area-inset-bottom,0px)] dark:border-zinc-800 dark:bg-zinc-900/90">
-      <div className="flex flex-col-reverse">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="flex w-full items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100/80 dark:text-zinc-100 dark:hover:bg-zinc-800/80"
-        >
-          <span>{expanded ? "Hide welcome setup" : "Complete welcome setup"}</span>
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className={`shrink-0 text-zinc-500 transition-transform dark:text-zinc-400 ${expanded ? "" : "rotate-180"}`}
-            aria-hidden
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className={`shrink-0 text-zinc-500 transition-transform dark:text-zinc-400 ${expanded ? "" : "rotate-180"}`}
+      aria-hidden
+    >
+      <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Collapsible “Add Goals” floating bar: same shell for first-login (portal) and My Goals (embedded).
+ * Rounded `max-w-lg` card above a matching toggle bar — not full viewport width.
+ */
+export function AddGoalsBar({
+  onDone,
+  defaultExpanded,
+  layout,
+  showBackdropWhenExpanded,
+}: {
+  onDone: () => void;
+  defaultExpanded: boolean;
+  layout: "portal" | "embedded";
+  showBackdropWhenExpanded: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const idPrefix = layout === "portal" ? "onboard" : "resume";
+  const dialogLabelledBy = `onboarding-title-${idPrefix}`;
+
+  const toggleBarClass =
+    "flex w-full items-center justify-center gap-2 rounded-2xl border border-zinc-200/90 bg-white px-4 py-3.5 text-sm font-semibold text-zinc-800 shadow-[0_-4px_28px_-4px_rgba(0,0,0,0.12)] transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_-4px_28px_-4px_rgba(0,0,0,0.45)] dark:hover:bg-zinc-800/90";
+
+  const cardShellClass =
+    "flex max-h-[min(85vh,44rem)] min-h-0 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900";
+
+  const inner = (
+    <div className="flex w-full max-w-lg flex-col-reverse gap-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className={toggleBarClass}
+      >
+        <span>{expanded ? "Hide" : "Add Goals"}</span>
+        <AddGoalsBarChevron expanded={expanded} />
+      </button>
+      <div
+        className={`grid min-h-0 transition-[grid-template-rows] duration-200 ease-out ${
+          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div
+            className={cardShellClass}
+            role={layout === "portal" && expanded ? "dialog" : undefined}
+            aria-modal={layout === "portal" && expanded ? true : undefined}
+            aria-labelledby={layout === "portal" && expanded ? dialogLabelledBy : undefined}
           >
-            <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <div
-          className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-            expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-          }`}
-        >
-          <div className="min-h-0 overflow-hidden">
-            <div className="flex h-[min(72vh,34rem)] flex-col overflow-hidden rounded-t-2xl border-x border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-              <OnboardingWizard onDone={onDone} idPrefix="resume" />
-            </div>
+            <OnboardingWizard onDone={onDone} idPrefix={idPrefix} />
           </div>
         </div>
       </div>
     </div>
   );
+
+  if (layout === "embedded") {
+    return (
+      <div className="w-full shrink-0 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2">
+        {inner}
+      </div>
+    );
+  }
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="pointer-events-none fixed inset-0 z-[200]">
+      {showBackdropWhenExpanded && expanded ? (
+        <div className="pointer-events-auto absolute inset-0 bg-black/45" aria-hidden />
+      ) : null}
+      <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+        <div className="pointer-events-auto mx-auto w-full max-w-lg">{inner}</div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+export function OnboardingResumeSheet({ onDone }: { onDone: () => void }) {
+  return (
+    <AddGoalsBar
+      layout="embedded"
+      defaultExpanded={false}
+      showBackdropWhenExpanded={false}
+      onDone={onDone}
+    />
+  );
 }
 
 export function OnboardingModal({ open, onDone }: { open: boolean; onDone: () => void }) {
   if (typeof document === "undefined" || !open) return null;
-
-  const titleId = "onboarding-title-onboard";
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/45 p-3 sm:items-center sm:p-6"
-      role="presentation"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="flex max-h-[min(94vh,44rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 sm:max-h-[min(90vh,46rem)]"
-      >
-        <OnboardingWizard onDone={onDone} idPrefix="onboard" />
-      </div>
-    </div>,
-    document.body
+  return (
+    <AddGoalsBar
+      layout="portal"
+      defaultExpanded
+      showBackdropWhenExpanded
+      onDone={onDone}
+    />
   );
 }

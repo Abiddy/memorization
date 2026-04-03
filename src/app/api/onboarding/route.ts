@@ -39,6 +39,22 @@ function targetEndFromSpan(span: "7d" | "1m" | "2m"): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** DB still on `horizon` + `target_end` (before migration_member_goals_per_track_deadlines.sql). */
+function isLegacyMemberGoalsColumnError(message: string): boolean {
+  return (
+    /memorize_target_end|revise_target_end|recite_target_end/i.test(message) ||
+    (/schema cache/i.test(message) && /member_goals/i.test(message))
+  );
+}
+
+function legacyHorizonFromSpans(m: "7d" | "1m" | "2m", r: "7d" | "1m" | "2m", c: "7d" | "1m" | "2m"): "week" | "month" {
+  return m === "7d" && r === "7d" && c === "7d" ? "week" : "month";
+}
+
+function latestIsoDate(dates: string[]): string {
+  return [...dates].sort((a, b) => a.localeCompare(b)).at(-1)!;
+}
+
 export async function POST(request: Request) {
   const cookieStore = await cookies();
   const memberId = cookieStore.get(COOKIE)?.value;
@@ -137,19 +153,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: mErr.message }, { status: 500 });
   }
 
-  const { error: gErr } = await admin.from("member_goals").upsert(
-    {
-      member_id: member.id,
-      memorize_target_end: memEnd,
-      revise_target_end: revEnd,
-      recite_target_end: recEnd,
-      memorizing_surah_ids: goalMem,
-      revising_surah_ids: goalRev,
-      reciting_surah_ids: goalRec,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "member_id" }
-  );
+  const goalsNewRow = {
+    member_id: member.id,
+    memorize_target_end: memEnd,
+    revise_target_end: revEnd,
+    recite_target_end: recEnd,
+    memorizing_surah_ids: goalMem,
+    revising_surah_ids: goalRev,
+    reciting_surah_ids: goalRec,
+    updated_at: new Date().toISOString(),
+  };
+
+  let { error: gErr } = await admin.from("member_goals").upsert(goalsNewRow, { onConflict: "member_id" });
+
+  if (gErr && isLegacyMemberGoalsColumnError(gErr.message)) {
+    const { error: legacyErr } = await admin.from("member_goals").upsert(
+      {
+        member_id: member.id,
+        horizon: legacyHorizonFromSpans(body.memorize_span, body.revise_span, body.recite_span),
+        target_end: latestIsoDate([memEnd, revEnd, recEnd]),
+        memorizing_surah_ids: goalMem,
+        revising_surah_ids: goalRev,
+        reciting_surah_ids: goalRec,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "member_id" }
+    );
+    gErr = legacyErr;
+  }
 
   if (gErr) {
     return NextResponse.json({ error: gErr.message }, { status: 500 });

@@ -33,20 +33,8 @@ type MatrixTrack = HeatmapActivity;
 
 const SURAH_RANGE = Array.from({ length: 114 }, (_, i) => i + 1);
 
-/** Surah columns: compact phones → sm → desktop lg+ (desktop: surahs as columns). */
-const SURAH_COL_W =
-  "w-[3rem] min-w-[3rem] max-w-[3rem] sm:w-[3.65rem] sm:min-w-[3.65rem] sm:max-w-[3.65rem] lg:w-[4.85rem] lg:min-w-[4.85rem] lg:max-w-[4.85rem]";
-const SURAH_COL = `${SURAH_COL_W} p-0`;
-
-/**
- * Transposed (&lt;lg): one column per member — fixed width so names stay readable;
- * table uses w-max + horizontal scroll as the roster grows.
- */
-const MEMBER_COL_TRANSPOSED =
-  "w-[5.5rem] min-w-[5.5rem] max-w-[5.5rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem] p-0";
-
-/** Heatmap cell height scales with column width. */
-const CELL_BOX = `box-border h-9 sm:h-11 lg:h-[3.05rem] ${SURAH_COL_W} shrink-0 rounded-md ring-1 lg:rounded-lg`;
+const SURAH_COL_STICKY =
+  "w-[min(42vw,9.5rem)] min-w-[6.75rem] max-w-[9.5rem] sm:w-[8.5rem] sm:min-w-[8.5rem] sm:max-w-[10rem]";
 
 function countSurahsForActivity(row: HeatmapRow | undefined, activity: HeatmapActivity): number {
   if (!row?.surahs) return 0;
@@ -63,15 +51,7 @@ const TRACK_OPTIONS: { value: MatrixTrack; label: string }[] = [
   { value: "reciting", label: "Reciting" },
 ];
 
-/** When a cell has multiple badges, tint the cell by the first of memorising → revising → reciting present. */
 const CHROME_ACT_ORDER: HeatmapActivity[] = ["memorizing", "revising", "reciting"];
-
-function primaryActivityForCellChrome(activities: HeatmapActivity[]): HeatmapActivity {
-  for (const a of CHROME_ACT_ORDER) {
-    if (activities.includes(a)) return a;
-  }
-  return activities[0]!;
-}
 
 function IconChevronDown({ className }: { className?: string }) {
   return (
@@ -157,14 +137,13 @@ export function SurahMatrixHelpButton({ className = "" }: { className?: string }
           className="absolute left-0 top-[calc(100%+0.375rem)] z-[60] w-[min(20rem,calc(100vw-1.25rem))] rounded-lg border border-zinc-200 bg-white p-2.5 text-left text-xs leading-snug text-zinc-600 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 sm:w-[min(22rem,calc(100vw-2rem))] sm:rounded-xl sm:p-3 sm:text-sm"
         >
           <p>
-            Icons in each cell show memorising, revising, or reciting (same as the key in the toolbar). On a phone, each{" "}
-            <span className="font-medium text-zinc-800 dark:text-zinc-100">row</span>{" "}
-            is a surah and columns are members — scroll sideways for more people. On a large screen, members are rows and
-            surahs scroll sideways. Tap <span className="font-medium text-zinc-800 dark:text-zinc-100">∧∨</span> next to
-            Surah (phone) or Member (desktop) to flip order. Tap{" "}
-            <span className="font-medium text-zinc-800 dark:text-zinc-100">your</span> column (or row on desktop) to
-            select; pick a track, then <span className="font-medium text-zinc-800 dark:text-zinc-100">Save</span> or{" "}
-            <span className="font-medium text-zinc-800 dark:text-zinc-100">Remove</span>.
+            Each row is a surah. Under <span className="font-medium text-zinc-800 dark:text-zinc-100">Name</span>, badges show
+            members on that surah; small circles are memorising, revising, or reciting. Tap{" "}
+            <span className="font-medium text-zinc-800 dark:text-zinc-100">your</span> badge (or the{" "}
+            <span className="font-medium text-zinc-800 dark:text-zinc-100">+</span> if you have no tracks yet) to select, pick a
+            track, then <span className="font-medium text-zinc-800 dark:text-zinc-100">Save</span> or{" "}
+            <span className="font-medium text-zinc-800 dark:text-zinc-100">Remove</span>. Use{" "}
+            <span className="font-medium text-zinc-800 dark:text-zinc-100">∧∨</span> next to Surah to reverse order.
           </p>
         </div>
       ) : null}
@@ -377,37 +356,108 @@ export function MatrixTrackLegend({ className = "" }: { className?: string }) {
   );
 }
 
-/** Icons in matrix cells: high contrast on tinted backgrounds. */
-const MATRIX_TRACK_ICON_WRAP =
-  "inline-flex h-3 w-3 shrink-0 items-center justify-center text-zinc-900 sm:h-3.5 sm:w-3.5 lg:h-4 lg:w-4 dark:text-white";
-
 function orderedActivitiesForCell(activities: HeatmapActivity[]): HeatmapActivity[] {
   return CHROME_ACT_ORDER.filter((a) => activities.includes(a));
 }
 
-function MatrixCellTrackIcons({ activities }: { activities: HeatmapActivity[] }) {
-  const ordered = orderedActivitiesForCell(activities);
-  const wrap = MATRIX_TRACK_ICON_WRAP;
-  const glyph = (a: HeatmapActivity) => (
-    <span key={a} title={TRACK_TITLE[a]} className={wrap}>
-      <TrackActivityIcon activity={a} className="h-full w-full" />
+/** Small filled circles behind track glyphs on name badges. */
+const BADGE_TRACK_CIRCLE: Record<HeatmapActivity, string> = {
+  memorizing:
+    "bg-emerald-500/25 text-emerald-800 ring-emerald-500/35 dark:bg-emerald-500/20 dark:text-emerald-100 dark:ring-emerald-400/40",
+  revising:
+    "bg-indigo-500/25 text-indigo-800 ring-indigo-500/35 dark:bg-indigo-500/20 dark:text-indigo-100 dark:ring-indigo-400/40",
+  reciting:
+    "bg-amber-500/25 text-amber-900 ring-amber-500/40 dark:bg-amber-500/20 dark:text-amber-100 dark:ring-amber-400/45",
+};
+
+function membersActiveOnSurah(
+  orderedRows: HeatmapRow[],
+  surahId: number,
+  currentMemberId: string | null | undefined
+): { row: HeatmapRow; activities: HeatmapActivity[] }[] {
+  const list: { row: HeatmapRow; activities: HeatmapActivity[] }[] = [];
+  for (const row of orderedRows) {
+    const raw = row.surahs[surahId];
+    if (raw?.length) {
+      list.push({ row, activities: orderedActivitiesForCell(raw) });
+    }
+  }
+  list.sort((a, b) => {
+    const aYou = currentMemberId && a.row.member_id === currentMemberId ? 0 : 1;
+    const bYou = currentMemberId && b.row.member_id === currentMemberId ? 0 : 1;
+    if (aYou !== bYou) return aYou - bYou;
+    return a.row.display_name.localeCompare(b.row.display_name);
+  });
+  return list;
+}
+
+function MemberSurahBadge({
+  displayName,
+  isYou,
+  activities,
+  interactive,
+  selected,
+  selectionTrack,
+  onToggle,
+}: {
+  displayName: string;
+  isYou: boolean;
+  activities: HeatmapActivity[];
+  interactive: boolean;
+  selected: boolean;
+  selectionTrack: MatrixTrack;
+  onToggle: () => void;
+}) {
+  const sel = MATRIX_TRACK_UI[selectionTrack];
+  const iconRow = (
+    <span className="flex shrink-0 flex-row items-center -space-x-1" aria-hidden>
+      {activities.map((a) => (
+        <span
+          key={a}
+          title={TRACK_TITLE[a]}
+          className={`inline-flex h-[1.25rem] w-[1.25rem] items-center justify-center rounded-full ring-2 ring-white dark:ring-zinc-950 sm:h-6 sm:w-6 ${BADGE_TRACK_CIRCLE[a]}`}
+        >
+          <TrackActivityIcon activity={a} className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+        </span>
+      ))}
     </span>
   );
-  if (ordered.length === 1) {
-    return <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center">{glyph(ordered[0]!)}</div>;
-  }
-  if (ordered.length === 2) {
+  const label = (
+    <span className="min-w-0 text-left text-[10px] font-medium leading-snug text-zinc-800 [overflow-wrap:anywhere] sm:text-[11px] dark:text-zinc-200">
+      {displayName}
+      {isYou ? <span className="font-normal text-zinc-500 dark:text-zinc-400"> (You)</span> : null}
+    </span>
+  );
+
+  const base =
+    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border px-2 py-1 sm:gap-2 sm:px-2.5 sm:py-1.5";
+
+  if (interactive) {
     return (
-      <div className="flex h-full min-h-0 w-full flex-1 flex-row items-center justify-center gap-0.5">{ordered.map(glyph)}</div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={selected}
+        aria-label={`${displayName} on this surah — tap to select for Save or Remove`}
+        className={`${base} text-left outline-none transition hover:opacity-95 ${
+          selected
+            ? `${sel.cellSelectedFilled} ring-2 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950`
+            : "border-zinc-200/90 bg-zinc-50/95 dark:border-zinc-600/80 dark:bg-zinc-900/90"
+        } ${sel.focusRing} focus-visible:ring-2 focus-visible:ring-offset-2`}
+      >
+        {iconRow}
+        {label}
+      </button>
     );
   }
+
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center gap-0.5">
-      <div className="flex flex-row items-center justify-center gap-0.5">
-        {glyph(ordered[0]!)}
-        {glyph(ordered[1]!)}
-      </div>
-      <div className="flex justify-center">{glyph(ordered[2]!)}</div>
+    <div
+      className={`${base} border-zinc-200/80 bg-zinc-50/90 dark:border-zinc-700/70 dark:bg-zinc-900/85`}
+      title={`${displayName} · ${activities.map((a) => TRACK_TITLE[a]).join(" · ")}`}
+    >
+      {iconRow}
+      {label}
     </div>
   );
 }
@@ -472,103 +522,20 @@ const MATRIX_TRACK_UI: Record<
   },
 };
 
-function HeatmapCell({
-  activities,
-  interactive,
-  selected,
-  selectionTrack,
-  onToggle,
-  surahTitle,
-}: {
-  activities: HeatmapActivity[] | null | undefined;
-  interactive: boolean;
-  selected: boolean;
-  /** Active track in the save bar; drives selection ring colour. */
-  selectionTrack: MatrixTrack;
-  onToggle: () => void;
-  surahTitle: string;
-}) {
-  const list = activities?.length ? activities : null;
-  const sel = MATRIX_TRACK_UI[selectionTrack];
-  const chromeTrack = list ? primaryActivityForCellChrome(list) : null;
-  const savedUi = chromeTrack ? MATRIX_TRACK_UI[chromeTrack] : null;
-
-  const inner = (
-    <>
-      {!list ? (
-        <div
-          className={`${CELL_BOX} ${
-            selected
-              ? sel.cellSelectedEmpty
-              : "bg-zinc-100/90 ring-zinc-200/80 dark:bg-zinc-800/50 dark:ring-zinc-700/60"
-          }`}
-          aria-hidden
-        />
-      ) : (
-        <div
-          className={`flex ${CELL_BOX} flex-col items-center justify-center gap-0.5 px-0.5 py-0.5 ${
-            selected ? sel.cellSelectedFilled : savedUi!.cellSavedFilled
-          }`}
-        >
-          {list.map((a) => (
-            <span key={a} title={TRACK_TITLE[a]} className={MATRIX_TRACK_ICON_WRAP}>
-              <TrackActivityIcon activity={a} className="h-full w-full" />
-            </span>
-          ))}
-        </div>
-      )}
-    </>
-  );
-
-  if (interactive) {
-    return (
-      <button
-        type="button"
-        title={surahTitle}
-        aria-label={surahTitle}
-        aria-pressed={selected}
-        onClick={onToggle}
-        className={`mx-auto flex min-h-[2.35rem] shrink-0 items-center justify-center rounded-md py-px outline-none ring-2 ring-transparent ring-offset-1 ring-offset-white transition hover:opacity-90 focus-visible:ring-offset-1 dark:ring-offset-zinc-950 sm:min-h-[2.85rem] sm:py-0.5 sm:ring-offset-2 sm:focus-visible:ring-offset-2 lg:min-h-[3.35rem] ${SURAH_COL_W} ${sel.focusRing} focus-visible:ring-2`}
-      >
-        {inner}
-      </button>
-    );
-  }
-
-  if (!list) {
-    return (
-      <div
-        className={`mx-auto ${CELL_BOX} bg-zinc-100/90 ring-zinc-200/80 dark:bg-zinc-800/50 dark:ring-zinc-700/60`}
-        title={surahTitle}
-        aria-hidden
-      />
-    );
-  }
-
-  const roChrome = primaryActivityForCellChrome(list);
-  const roSaved = MATRIX_TRACK_UI[roChrome].cellSavedFilled;
-
-  return (
-    <div
-      className={`mx-auto flex ${CELL_BOX} flex-col items-stretch justify-center px-0.5 py-0.5 ${roSaved}`}
-      title={`${surahTitle} · ${list.map((a) => TRACK_TITLE[a]).join(" · ")}`}
-    >
-      <MatrixCellTrackIcons activities={list} />
-    </div>
-  );
-}
-
 export function SurahHeatmapPanel({
   heatmap,
   currentMemberId,
   onSaved,
   myPctQuran,
+  readOnly = false,
 }: {
   heatmap: HeatmapPayload | null | undefined;
   currentMemberId: string | null | undefined;
   onSaved?: () => void;
   /** Your % Quran (memorised surahs), from dashboard — optional. */
   myPctQuran?: number | null;
+  /** When true, matrix is display-only (no selection / save). */
+  readOnly?: boolean;
 }) {
   const rows = heatmap?.rows ?? [];
 
@@ -699,149 +666,96 @@ export function SurahHeatmapPanel({
           {empty ? (
             <p className="p-4 text-xs text-zinc-500 sm:p-6 sm:text-sm">No members yet.</p>
           ) : (
-            <>
-              {/* &lt;lg: surahs as rows (scroll vertically), members as columns — fits phone width */}
-              <table className="w-max shrink-0 border-separate border-spacing-x-2.5 border-spacing-y-3 sm:border-spacing-x-3.5 sm:border-spacing-y-3.5 lg:hidden">
-                <thead>
-                  <tr>
-                    <th
-                      scope="col"
-                      className="sticky left-0 top-0 z-50 w-[5.85rem] min-w-[5.85rem] max-w-[5.85rem] bg-white py-2 pl-2 pr-1 align-bottom sm:w-[7.75rem] sm:min-w-[7.75rem] sm:max-w-[7.75rem] sm:py-2.5 sm:pl-2.5 sm:pr-1.5 dark:bg-zinc-950"
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="min-w-0 flex-1 text-left text-[9px] font-semibold uppercase tracking-wide text-zinc-400 sm:text-[10px] dark:text-zinc-500">
-                          Surah
-                        </span>
-                        <SurahOrderToggle
-                          surahOrderDesc={surahOrderDesc}
-                          onToggle={() => setSurahOrderDesc((d) => !d)}
-                        />
-                      </div>
-                    </th>
-                    {orderedRows.map((row) => {
-                      const isYou = currentMemberId != null && row.member_id === currentMemberId;
-                      return (
-                        <th
-                          key={row.member_id}
-                          scope="col"
-                          title={isYou ? `${row.display_name} (You)` : row.display_name}
-                          className={`sticky top-0 z-40 ${MEMBER_COL_TRANSPOSED} box-border bg-white align-bottom px-1 py-2 dark:bg-zinc-950 sm:py-2.5`}
-                        >
-                          <div className="flex w-full min-w-0 max-w-full flex-col items-center justify-end gap-0 px-0.5">
-                            <span className="w-full min-w-0 max-w-full text-center text-[9px] font-semibold leading-snug text-zinc-700 [overflow-wrap:anywhere] sm:text-[11px] dark:text-zinc-300">
-                              {row.display_name}
-                              {isYou ? (
-                                <span className="block font-normal text-zinc-500 dark:text-zinc-400">(You)</span>
-                              ) : null}
-                            </span>
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {surahOrderList.map((n) => {
-                    const title = `${n}. ${surahName(n)}`;
-                    return (
-                      <tr key={n} className="group">
-                        <th
-                          scope="row"
-                          className="sticky left-0 z-30 w-[5.85rem] min-w-[5.85rem] max-w-[5.85rem] whitespace-normal break-words rounded-md border border-zinc-200/60 bg-zinc-50/95 py-2 pl-2 pr-1 text-left text-[10px] font-medium leading-snug text-zinc-900 sm:w-[7.75rem] sm:min-w-[7.75rem] sm:max-w-[7.75rem] sm:py-2.5 sm:pl-2.5 sm:pr-1.5 sm:text-xs dark:border-zinc-700/60 dark:bg-zinc-900/95 dark:text-zinc-100"
-                          title={title}
-                        >
-                          <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{n}.</span>{" "}
-                          {surahName(n)}
-                        </th>
-                        {orderedRows.map((row) => {
-                          const isYou = currentMemberId != null && row.member_id === currentMemberId;
-                          return (
-                            <td key={row.member_id} className={`align-middle ${MEMBER_COL_TRANSPOSED}`}>
-                              <HeatmapCell
-                                activities={row.surahs[n] ?? null}
-                                interactive={isYou}
-                                selected={isYou && selectedSurahs.has(n)}
-                                selectionTrack={matrixTrack}
-                                onToggle={() => toggleSurah(n)}
-                                surahTitle={title}
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <table className="w-full border-separate border-spacing-y-2 border-spacing-x-0 sm:border-spacing-y-2.5">
+              <thead>
+                <tr>
+                  <th
+                    scope="col"
+                    className={`sticky left-0 top-0 z-50 ${SURAH_COL_STICKY} bg-white py-2 pl-3 pr-1 align-bottom sm:pl-4 dark:bg-zinc-950`}
+                  >
+                    <div className="flex items-center gap-1 sm:gap-1.5">
+                      <span className="min-w-0 flex-1 text-left text-[9px] font-semibold uppercase tracking-wide text-zinc-400 sm:text-[10px] dark:text-zinc-500">
+                        Surah
+                      </span>
+                      <SurahOrderToggle
+                        surahOrderDesc={surahOrderDesc}
+                        onToggle={() => setSurahOrderDesc((d) => !d)}
+                      />
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 z-40 min-w-0 bg-white py-2 pl-2 pr-3 text-left align-bottom sm:pl-3 sm:pr-4 dark:bg-zinc-950"
+                  >
+                    <span className="text-[9px] font-semibold uppercase tracking-wide text-zinc-400 sm:text-[10px] dark:text-zinc-500">
+                      Name
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200/60 dark:divide-zinc-800/70">
+                {surahOrderList.map((n) => {
+                  const title = `${n}. ${surahName(n)}`;
+                  const here = membersActiveOnSurah(orderedRows, n, currentMemberId);
+                  const youHere =
+                    currentMemberId != null && here.some((h) => h.row.member_id === currentMemberId);
+                  const canPick = Boolean(currentMemberId && !readOnly);
+                  const selUi = MATRIX_TRACK_UI[matrixTrack];
+                  const emptySelected = canPick && !youHere && selectedSurahs.has(n);
 
-              {/* lg+: members as rows, surahs as columns (wide screens) */}
-              <table className="hidden w-max shrink-0 border-separate border-spacing-x-6 border-spacing-y-3 lg:table">
-                <thead>
-                  <tr>
-                    <th
-                      scope="col"
-                      className="sticky left-0 top-0 z-40 min-w-[10rem] w-[10rem] max-w-[10rem] rounded-md border border-zinc-200/70 bg-white py-2.5 pl-3 pr-2 text-left align-middle text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:border-zinc-700/65 dark:bg-zinc-950 dark:text-zinc-500"
-                    >
-                      <div className="flex items-center justify-between gap-2 pr-0.5">
-                        <span>Member</span>
-                        <SurahOrderToggle
-                          size="md"
-                          surahOrderDesc={surahOrderDesc}
-                          onToggle={() => setSurahOrderDesc((d) => !d)}
-                        />
-                      </div>
-                    </th>
-                    {surahOrderList.map((n) => (
+                  return (
+                    <tr key={n} className="group">
                       <th
-                        key={n}
-                        scope="col"
-                        title={`${n}. ${surahName(n)}`}
-                        className={`sticky top-0 z-20 ${SURAH_COL} bg-white align-top px-1 py-2 dark:bg-zinc-950`}
+                        scope="row"
+                        className={`sticky left-0 z-30 ${SURAH_COL_STICKY} whitespace-normal break-words bg-zinc-50/95 py-2.5 pl-3 pr-1 text-left text-[10px] font-medium leading-snug text-zinc-900 sm:py-3 sm:pl-4 sm:text-xs dark:bg-zinc-900/95 dark:text-zinc-100`}
+                        title={title}
                       >
-                        <div className="flex w-full justify-center px-0.5">
-                          <span className="text-center text-[11px] font-semibold leading-snug text-zinc-700 [overflow-wrap:anywhere] dark:text-zinc-300">
-                            {surahName(n)}
-                          </span>
-                        </div>
+                        <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{n}.</span>{" "}
+                        {surahName(n)}
                       </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {orderedRows.map((row) => {
-                    const isYou = currentMemberId != null && row.member_id === currentMemberId;
-                    return (
-                      <tr key={row.member_id} className="group">
-                        <th
-                          scope="row"
-                          className="sticky left-0 z-10 min-w-[10rem] w-[10rem] max-w-[10rem] whitespace-nowrap rounded-md border border-zinc-200/60 bg-zinc-50/95 py-1.5 pl-3 pr-2 text-left text-sm font-medium text-zinc-900 dark:border-zinc-700/60 dark:bg-zinc-900/95 dark:text-zinc-100"
-                        >
-                          {row.display_name}
-                          {isYou ? (
-                            <span className="ml-1 font-normal text-zinc-500 dark:text-zinc-400">(You)</span>
-                          ) : null}
-                        </th>
-                        {surahOrderList.map((n) => {
-                          const title = `${n}. ${surahName(n)}`;
-                          return (
-                            <td key={n} className={`align-middle ${SURAH_COL}`}>
-                              <HeatmapCell
-                                activities={row.surahs[n] ?? null}
-                                interactive={isYou}
-                                selected={isYou && selectedSurahs.has(n)}
+                      <td className="min-w-0 py-2 pl-2 pr-3 align-middle sm:py-2.5 sm:pl-3 sm:pr-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {here.map(({ row, activities }) => {
+                            const isYou = currentMemberId != null && row.member_id === currentMemberId;
+                            return (
+                              <MemberSurahBadge
+                                key={row.member_id}
+                                displayName={row.display_name}
+                                isYou={isYou}
+                                activities={activities}
+                                interactive={isYou && !readOnly}
+                                selected={isYou && !readOnly && selectedSurahs.has(n)}
                                 selectionTrack={matrixTrack}
                                 onToggle={() => toggleSurah(n)}
-                                surahTitle={title}
                               />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </>
+                            );
+                          })}
+                          {canPick && !youHere ? (
+                            <button
+                              type="button"
+                              title={title}
+                              aria-label={`Select ${title} for your tracks`}
+                              aria-pressed={emptySelected}
+                              onClick={() => toggleSurah(n)}
+                              className={`inline-flex size-8 shrink-0 items-center justify-center rounded-md text-sm font-semibold outline-none ring-2 ring-transparent transition hover:opacity-90 sm:size-9 ${selUi.focusRing} focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950 ${
+                                emptySelected
+                                  ? selUi.cellSelectedEmpty
+                                  : "bg-zinc-100/90 text-zinc-400 ring-zinc-200/80 dark:bg-zinc-800/50 dark:text-zinc-500 dark:ring-zinc-700/60"
+                              }`}
+                            >
+                              +
+                            </button>
+                          ) : null}
+                          {here.length === 0 && !canPick ? (
+                            <span className="text-xs text-zinc-400 dark:text-zinc-600">—</span>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
         </div>
       </div>
@@ -871,7 +785,7 @@ export function SurahHeatmapPanel({
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
                 {myMem}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs in your row</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
             </div>
 
             <div className="text-left">
@@ -882,7 +796,7 @@ export function SurahHeatmapPanel({
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
                 {myRev}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs in your row</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
             </div>
 
             <div className="text-left">
@@ -893,15 +807,20 @@ export function SurahHeatmapPanel({
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
                 {myRec}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs in your row</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
             </div>
           </div>
         ) : (
           <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Sign in to see your stats.</p>
         )}
 
+        {readOnly ? (
+          <p className="mt-6 text-[11px] leading-relaxed text-amber-800 dark:text-amber-400/90">
+            View only — update tracks from the chat picker (I am…) or My goals.
+          </p>
+        ) : null}
         <p className="mt-10 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-          Scroll horizontally to see all surahs. Column headers are surah names; hover for number + full title.
+          Each row is a surah. Name badges show who is active; coloured circles are memorising, revising, and reciting.
         </p>
       </aside>
     </div>

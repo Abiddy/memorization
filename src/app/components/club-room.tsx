@@ -22,8 +22,12 @@ import {
   type HeatmapPayload,
 } from "@/app/components/surah-heatmap-panel";
 import { IconTrackMemorising, IconTrackReciting, IconTrackRevising } from "@/app/components/track-activity-icons";
-import { MyGoalsPanel, type MyGoalsPayload } from "@/app/components/my-goals-panel";
-import { OnboardingModal } from "@/app/components/onboarding-modal";
+import { MyGoalsPanel, type MyGoalsPayload, type StatusLogEntry } from "@/app/components/my-goals-panel";
+import {
+  AddGoalsModal,
+  type AddGoalsModalInitial,
+  OnboardingModal,
+} from "@/app/components/onboarding-modal";
 import type { MemberTrajectory } from "@/lib/progress-aggregate";
 
 type MessageRow = {
@@ -46,36 +50,82 @@ type DashboardRow = {
   revising: DashboardSurahEntry[];
   memorising: DashboardSurahEntry[];
   reciting: DashboardSurahEntry[];
+  completed_memorising: DashboardSurahEntry[];
+  completed_revising: DashboardSurahEntry[];
+  completed_reciting: DashboardSurahEntry[];
   pct_quran: number;
 };
 
-function FocusTrackSurahList({ entries }: { entries: DashboardSurahEntry[] }) {
-  if (entries.length === 0) {
+const FOCUS_BADGE_CLASS =
+  "inline-flex min-w-[1rem] shrink-0 items-center justify-center rounded border border-zinc-300/90 bg-zinc-200/90 px-0.5 py-px text-[8px] font-semibold tabular-nums leading-none text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 lg:min-w-[1.125rem] lg:rounded-md lg:px-1 lg:text-[9px]";
+
+function FocusTrackCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+/** Active + completed for one track: completed first (green + ✓), then in-progress (normal). */
+function FocusTrackCombinedList({
+  active,
+  completed,
+}: {
+  active: DashboardSurahEntry[];
+  completed: DashboardSurahEntry[];
+}) {
+  const doneIds = new Set(completed.map((c) => c.surahId));
+  const activeOnly = active.filter((a) => !doneIds.has(a.surahId));
+  const bySurah = (a: DashboardSurahEntry, b: DashboardSurahEntry) => a.surahId - b.surahId;
+  const items: { entry: DashboardSurahEntry; done: boolean }[] = [
+    ...[...completed].sort(bySurah).map((e) => ({ entry: e, done: true })),
+    ...[...activeOnly].sort(bySurah).map((e) => ({ entry: e, done: false })),
+  ];
+
+  if (items.length === 0) {
     return <span className="text-zinc-400 dark:text-zinc-500">—</span>;
   }
-  const badgeClass =
-    "inline-flex min-w-[1rem] shrink-0 items-center justify-center rounded border border-zinc-300/90 bg-zinc-200/90 px-0.5 py-px text-[8px] font-semibold tabular-nums leading-none text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 lg:min-w-[1.125rem] lg:rounded-md lg:px-1 lg:text-[9px]";
+
+  const rowClass = (done: boolean) =>
+    done
+      ? "text-emerald-700 dark:text-emerald-400"
+      : "text-zinc-600 dark:text-zinc-400";
+
   return (
     <>
-      <span className="flex flex-col gap-0.5 text-[10px] leading-tight text-zinc-600 dark:text-zinc-400 lg:hidden">
-        {entries.map((e) => (
-          <span key={e.surahId} className="inline-flex min-w-0 max-w-full items-baseline gap-0.5">
-            <span className={badgeClass} title={`Juz ${e.juz}`}>
+      <span className="flex flex-col gap-0.5 text-[10px] leading-tight lg:hidden">
+        {items.map(({ entry: e, done }) => (
+          <span key={e.surahId} className={`inline-flex min-w-0 max-w-full items-baseline gap-0.5 ${rowClass(done)}`}>
+            <span className={FOCUS_BADGE_CLASS} title={`Juz ${e.juz}`}>
               {e.juz}
             </span>
             <span className="min-w-0 break-words [overflow-wrap:anywhere]">{e.name}</span>
+            {done ? <FocusTrackCheckIcon className="mt-px shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
           </span>
         ))}
       </span>
-      <span className="hidden text-sm leading-relaxed text-zinc-600 dark:text-zinc-400 lg:inline">
-        {entries.map((e, i) => (
+      <span className="hidden text-sm leading-relaxed lg:inline">
+        {items.map(({ entry: e, done }, i) => (
           <Fragment key={e.surahId}>
             {i > 0 ? <span className="text-zinc-500">, </span> : null}
-            <span className="inline-flex items-baseline gap-1">
-              <span className={badgeClass} title={`Juz ${e.juz}`}>
+            <span className={`inline-flex items-baseline gap-1 ${rowClass(done)}`}>
+              <span className={FOCUS_BADGE_CLASS} title={`Juz ${e.juz}`}>
                 {e.juz}
               </span>
               <span>{e.name}</span>
+              {done ? <FocusTrackCheckIcon className="shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
             </span>
           </Fragment>
         ))}
@@ -86,7 +136,9 @@ function FocusTrackSurahList({ entries }: { entries: DashboardSurahEntry[] }) {
 
 type ProgressMe = {
   needsOnboarding: boolean;
+  memorized_surah_ids: number[];
   goals: MyGoalsPayload | null;
+  statusLog: StatusLogEntry[];
 };
 
 type ProgressReport = {
@@ -99,7 +151,25 @@ type ProgressReport = {
   me: ProgressMe | null;
 };
 
-type MainPanel = "chat" | "focus" | "goals" | "heatmap" | "trajectory" | "bars";
+type MainPanel = "chat" | "focus" | "goals" | "heatmap" | "stats";
+
+function addGoalsModalInitialFromPayload(goals: MyGoalsPayload | null): AddGoalsModalInitial {
+  if (!goals) return null;
+  return {
+    memorizing: {
+      surahIds: goals.memorizing.entries.map((e) => e.surahId),
+      targetEnd: goals.memorizing.targetEnd,
+    },
+    revising: {
+      surahIds: goals.revising.entries.map((e) => e.surahId),
+      targetEnd: goals.revising.targetEnd,
+    },
+    reciting: {
+      surahIds: goals.reciting.entries.map((e) => e.surahId),
+      targetEnd: goals.reciting.targetEnd,
+    },
+  };
+}
 
 function ClubBrandTitle() {
   return (
@@ -177,26 +247,15 @@ const NAV: {
     },
   },
   {
-    id: "trajectory",
-    label: "Projections",
-    Icon: function IconLine({ className }: { className?: string }) {
+    id: "stats",
+    label: "Stats",
+    Icon: function IconStats({ className }: { className?: string }) {
       return (
         <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M3 3v18h18" />
           <path d="M7 16l4-6 4 3 5-9" />
-        </svg>
-      );
-    },
-  },
-  {
-    id: "bars",
-    label: "Leaderboard",
-    Icon: function IconBars({ className }: { className?: string }) {
-      return (
-        <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <line x1="18" y1="20" x2="18" y2="10" />
-          <line x1="12" y1="20" x2="12" y2="4" />
-          <line x1="6" y1="20" x2="6" y2="14" />
+          <line x1="18" y1="20" x2="18" y2="14" />
+          <line x1="12" y1="20" x2="12" y2="10" />
         </svg>
       );
     },
@@ -244,10 +303,8 @@ function panelTitle(p: MainPanel): string {
       return "My goals";
     case "heatmap":
       return "Surah matrix";
-    case "trajectory":
-      return "Projections";
-    case "bars":
-      return "Leaderboard bars";
+    case "stats":
+      return "Stats";
     default:
       return "Club";
   }
@@ -367,77 +424,62 @@ const TRAJECTORY_PALETTE = [
 const SURAH_CHART_MAX = 114;
 const SURAH_Y_TICKS = [0, 19, 38, 57, 76, 95, 114];
 
-function lastRecordedSurahsUpTo(series: { date: string; surahs: number }[], d: string): number | undefined {
-  let v: number | undefined;
-  for (const p of series) {
-    if (p.date <= d) v = p.surahs;
-    else break;
-  }
-  return v;
-}
-
 /** YYYY-MM-DD for “today” in UTC — matches stored progress day keys. */
 function utcTodayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** First day of each of the next `count` calendar months after `lastIso`’s month. */
-function futureMonthStartDates(lastIso: string, count: number): string[] {
-  const y = Number(lastIso.slice(0, 4));
-  const m = Number(lastIso.slice(5, 7));
-  if (!y || !m) return [];
+function dateToYm(ymd: string): string {
+  return ymd.slice(0, 7);
+}
+
+/** Last calendar day of month `YYYY-MM` (UTC). */
+function lastDayOfMonthYm(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  const d = new Date(Date.UTC(y, m, 0));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Inclusive list of `YYYY-MM` from `fromYm` through `toYm`. */
+function enumerateMonthsInclusive(fromYm: string, toYm: string): string[] {
+  if (fromYm > toYm) return [toYm];
   const out: string[] = [];
-  let yy = y;
-  let mm = m;
-  for (let i = 0; i < count; i++) {
-    mm += 1;
-    if (mm > 12) {
-      mm = 1;
-      yy += 1;
+  let y = Number(fromYm.slice(0, 4));
+  let mo = Number(fromYm.slice(5, 7));
+  const endY = Number(toYm.slice(0, 4));
+  const endM = Number(toYm.slice(5, 7));
+  if (!y || !mo || !endY || !endM) return [toYm];
+  while (y < endY || (y === endY && mo <= endM)) {
+    out.push(`${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}`);
+    mo += 1;
+    if (mo > 12) {
+      mo = 1;
+      y += 1;
     }
-    out.push(`${String(yy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-01`);
   }
   return out;
 }
 
-function mergeProjectionDates(sortedDataDates: string[], futureMonthCount: number): string[] {
-  if (sortedDataDates.length === 0) return sortedDataDates;
-  const set = new Set(sortedDataDates);
-  const last = sortedDataDates[sortedDataDates.length - 1]!;
-  for (const d of futureMonthStartDates(last, futureMonthCount)) set.add(d);
-  return [...set].sort((a, b) => a.localeCompare(b));
-}
-
-function pickXAxisTicks(sortedDates: string[]): string[] {
-  if (sortedDates.length === 0) return [];
-  if (sortedDates.length === 1) return sortedDates;
-  const distinctMonths = new Set(sortedDates.map((x) => x.slice(0, 7)));
-  if (distinctMonths.size >= 2) {
-    const firstInMonth = new Map<string, string>();
-    for (const x of sortedDates) {
-      const ym = x.slice(0, 7);
-      if (!firstInMonth.has(ym)) firstInMonth.set(ym, x);
-    }
-    return [...firstInMonth.values()].sort((a, b) => a.localeCompare(b));
+/** `recorded` sorted by `date` ascending — cumulative surahs memorised on or before `ymd`. */
+function surahsOnOrBefore(recorded: { date: string; surahs: number }[], ymd: string): number {
+  let v = 0;
+  for (const p of recorded) {
+    if (p.date <= ymd) v = p.surahs;
+    else break;
   }
-  const step = Math.max(1, Math.ceil(sortedDates.length / 5));
-  const out: string[] = [];
-  for (let i = 0; i < sortedDates.length; i += step) out.push(sortedDates[i]!);
-  const last = sortedDates[sortedDates.length - 1]!;
-  if (out[out.length - 1] !== last) out.push(last);
-  return out;
+  return v;
 }
 
-function formatTrajectoryXAxis(iso: string, sortedDates: string[]): string {
+function formatMonthTickFromYm(ym: string): string {
   try {
-    const multiMonth = new Set(sortedDates.map((d) => d.slice(0, 7))).size > 1;
-    const d = new Date(`${iso}T00:00:00.000Z`);
-    if (multiMonth) {
-      return new Intl.DateTimeFormat(undefined, { month: "short", timeZone: "UTC" }).format(d);
-    }
-    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      year: "2-digit",
+      timeZone: "UTC",
+    }).format(new Date(`${ym}-15T00:00:00.000Z`));
   } catch {
-    return iso;
+    return ym;
   }
 }
 
@@ -448,79 +490,73 @@ type TrajectoryLineSpec = {
   dashed?: boolean;
 };
 
+/**
+ * Equal-spaced months on the X axis; Y = cumulative completed memorisation (distinct surahs toward % Quran).
+ */
 function buildProjectionChart(
   trajs: MemberTrajectory[],
   scope: "you" | "all",
-  selfId: string | undefined,
-  asOfDate: string
+  selfId: string | undefined
 ): {
   rows: Record<string, string | number | undefined>[];
   lines: TrajectoryLineSpec[];
+  /** `YYYY-MM` for each column (same order as `monthIndex`). */
   sortedDates: string[];
-  xTicks: string[];
+  xTicks: number[];
 } {
   if (trajs.length === 0) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
 
-  if (scope === "you") {
-    const self = selfId ? trajs.find((t) => t.member_id === selfId) : undefined;
-    if (!self) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
-    const dateSet = new Set<string>();
-    for (const p of self.recorded) dateSet.add(p.date);
-    for (const p of self.projection) dateSet.add(p.date);
-    const rawDates = [...dateSet].sort((a, b) => a.localeCompare(b));
-    const dates = mergeProjectionDates(rawDates, 6);
-    const rows = dates.map((date) => {
-      let recorded = lastRecordedSurahsUpTo(self.recorded, date);
-      if (recorded !== undefined && date > asOfDate) recorded = undefined;
-      const forecast = self.projection.find((p) => p.date === date)?.surahs;
-      return {
-        date,
-        ...(recorded !== undefined ? { recorded } : {}),
-        ...(forecast !== undefined ? { forecast } : {}),
-      } as Record<string, string | number | undefined>;
-    });
-    return {
-      rows,
-      lines: [
-        { dataKey: "recorded", name: "Recorded", stroke: "#047857" },
-        { dataKey: "forecast", name: "Projected", stroke: "#10b981", dashed: true },
-      ],
-      sortedDates: dates,
-      xTicks: pickXAxisTicks(dates),
-    };
-  }
+  const list =
+    scope === "you"
+      ? selfId
+        ? trajs.filter((t) => t.member_id === selfId)
+        : []
+      : [...trajs].sort((a, b) => a.display_name.localeCompare(b.display_name));
 
-  const trajsSorted = [...trajs].sort((a, b) => a.display_name.localeCompare(b.display_name));
-  const sortedIds = trajsSorted.map((t) => t.member_id);
-  const dateSet = new Set<string>();
-  for (const t of trajs) {
-    for (const p of t.recorded) dateSet.add(p.date);
-    for (const p of t.projection) dateSet.add(p.date);
+  if (list.length === 0) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
+
+  const todayYm = utcTodayIso().slice(0, 7);
+  let minYm = todayYm;
+  for (const t of list) {
+    for (const p of t.recorded) {
+      const ym = dateToYm(p.date);
+      if (ym < minYm) minYm = ym;
+    }
   }
-  const rawDates = [...dateSet].sort((a, b) => a.localeCompare(b));
-  const dates = mergeProjectionDates(rawDates, 6);
-  const rows = dates.map((date) => {
-    const row: Record<string, string | number | undefined> = { date };
-    for (const t of trajs) {
-      let rec = lastRecordedSurahsUpTo(t.recorded, date);
-      if (rec !== undefined && date > asOfDate) rec = undefined;
-      if (rec !== undefined) row[`rec_${t.member_id}`] = rec;
-      const prj = t.projection.find((p) => p.date === date)?.surahs;
-      if (prj !== undefined) row[`prj_${t.member_id}`] = prj;
+  const cap = new Date();
+  cap.setUTCFullYear(cap.getUTCFullYear() - 3);
+  const capYm = cap.toISOString().slice(0, 7);
+  if (minYm < capYm) minYm = capYm;
+
+  const months = enumerateMonthsInclusive(minYm, todayYm);
+  if (months.length === 0) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
+
+  const rows: Record<string, string | number | undefined>[] = months.map((ym, monthIndex) => {
+    const monthEnd = lastDayOfMonthYm(ym);
+    const row: Record<string, string | number | undefined> = {
+      monthIndex,
+      monthYm: ym,
+    };
+    for (const t of list) {
+      row[`s_${t.member_id}`] = surahsOnOrBefore(t.recorded, monthEnd);
     }
     return row;
   });
 
-  const lines: TrajectoryLineSpec[] = [];
-  for (const t of trajsSorted) {
-    const stroke =
-      TRAJECTORY_PALETTE[sortedIds.indexOf(t.member_id) % TRAJECTORY_PALETTE.length] ?? "#047857";
-    lines.push(
-      { dataKey: `rec_${t.member_id}`, name: `${t.display_name} · recorded`, stroke },
-      { dataKey: `prj_${t.member_id}`, name: `${t.display_name} · projected`, stroke, dashed: true }
-    );
-  }
-  return { rows, lines, sortedDates: dates, xTicks: pickXAxisTicks(dates) };
+  const sortedIds = list.map((t) => t.member_id);
+  const lines: TrajectoryLineSpec[] = list.map((t) => ({
+    dataKey: `s_${t.member_id}`,
+    name: t.display_name,
+    stroke: TRAJECTORY_PALETTE[sortedIds.indexOf(t.member_id) % TRAJECTORY_PALETTE.length] ?? "#047857",
+  }));
+
+  const n = months.length;
+  const step = n > 20 ? Math.ceil(n / 10) : n > 14 ? 2 : 1;
+  const xTicks: number[] = [];
+  for (let i = 0; i < n; i += step) xTicks.push(i);
+  if (xTicks[xTicks.length - 1] !== n - 1) xTicks.push(n - 1);
+
+  return { rows, lines, sortedDates: months, xTicks };
 }
 
 function ProjectionsScopeToggle({
@@ -777,6 +813,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   const [projectionScope, setProjectionScope] = useState<"you" | "all">("you");
   const listRef = useRef<HTMLDivElement>(null);
   const inviteCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [addGoalsOpen, setAddGoalsOpen] = useState(false);
+  const [addGoalsKey, setAddGoalsKey] = useState(0);
 
   const loadMessages = useCallback(async () => {
     const res = await fetch("/api/messages");
@@ -789,6 +827,13 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     const res = await fetch("/api/progress");
     if (!res.ok) return;
     const data = (await res.json()) as Partial<ProgressReport>;
+    const rawMe = (data as { me?: ProgressMe | null }).me ?? null;
+    const me: ProgressMe | null = rawMe
+      ? {
+          ...rawMe,
+          memorized_surah_ids: rawMe.memorized_surah_ids ?? [],
+        }
+      : null;
     setProgress({
       leaderboard: data.leaderboard ?? [],
       clubSeries: data.clubSeries ?? [],
@@ -796,7 +841,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
       memberTrajectories: data.memberTrajectories ?? [],
       dashboard: data.dashboard ?? [],
       heatmap: data.heatmap ?? null,
-      me: (data as { me?: ProgressMe | null }).me ?? null,
+      me,
     });
   }, []);
 
@@ -916,19 +961,23 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   }, [mobileNavOpen]);
 
   const projectionChart = useMemo(() => {
-    const asOf = utcTodayIso();
-    return buildProjectionChart(
-      progress?.memberTrajectories ?? [],
-      projectionScope,
-      memberId ?? undefined,
-      asOf
-    );
+    return buildProjectionChart(progress?.memberTrajectories ?? [], projectionScope, memberId ?? undefined);
   }, [progress?.memberTrajectories, projectionScope, memberId]);
 
   const trajectoryYouAvailable = useMemo(() => {
     if (!memberId || !progress?.memberTrajectories?.length) return false;
     return progress.memberTrajectories.some((t) => t.member_id === memberId);
   }, [memberId, progress?.memberTrajectories]);
+
+  const addNewGoalsFullyBlocked = useMemo(() => {
+    const g = progress?.me?.goals;
+    if (!g) return false;
+    return (
+      g.memorizing.entries.length > 0 &&
+      g.revising.entries.length > 0 &&
+      g.reciting.entries.length > 0
+    );
+  }, [progress?.me?.goals]);
 
   useEffect(() => {
     if (!trajectoryYouAvailable && projectionScope === "you") setProjectionScope("all");
@@ -1079,12 +1128,29 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             <div className="flex min-w-0 max-w-[min(52vw,13.5rem)] shrink-0 items-center justify-end pl-1 sm:max-w-none sm:pl-2">
               <MatrixTrackLegend className="text-right leading-tight" />
             </div>
-          ) : panel === "trajectory" ? (
+          ) : panel === "stats" ? (
             <ProjectionsScopeToggle
               value={projectionScope}
               onChange={setProjectionScope}
               youDisabled={!trajectoryYouAvailable}
             />
+          ) : panel === "goals" ? (
+            <button
+              type="button"
+              disabled={addNewGoalsFullyBlocked}
+              title={
+                addNewGoalsFullyBlocked
+                  ? "Complete your goals in this track to set a new one!"
+                  : undefined
+              }
+              onClick={() => {
+                setAddGoalsKey((k) => k + 1);
+                setAddGoalsOpen(true);
+              }}
+              className="shrink-0 rounded-full border border-zinc-300 bg-zinc-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45 dark:border-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:opacity-40"
+            >
+              Add New Goals +
+            </button>
           ) : (
             <GroupMemberStack
               members={groupMembers}
@@ -1184,10 +1250,12 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-950">
               <MyGoalsPanel
                 goals={progress?.me?.goals ?? null}
+                statusLog={progress?.me?.statusLog ?? []}
                 resumeWelcomeSetup={Boolean(
                   progress?.me && !progress.me.needsOnboarding && progress.me.goals == null
                 )}
                 onWelcomeDone={() => void loadProgress()}
+                onGoalsUpdated={() => void loadProgress()}
               />
             </div>
           ) : null}
@@ -1198,14 +1266,16 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">Memorising</span>,{" "}
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">revising</span>, and{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">reciting</span> are tracked separately by{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">surah</span> (each column lists the surahs on that
-                  track). <span className="font-medium text-zinc-600 dark:text-zinc-300">% Quran</span> reflects surahs you have
-                  memorised (from memorising updates and the Surah matrix).
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">reciting</span> come from the chat picker (
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">I am…</span>). Surahs marked done from{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">My goals</span> appear in the same column in{" "}
+                  <span className="font-medium text-emerald-700 dark:text-emerald-400">green with a checkmark</span>; other surahs are
+                  in progress. The Surah matrix is view-only.{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">% Quran</span> reflects surahs you have memorised.
                 </p>
               </div>
               <div className="mx-auto mt-0 w-full max-w-5xl min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40 lg:mt-6 lg:rounded-xl">
-                <table className="w-full min-w-[28rem] text-left text-xs lg:min-w-0 lg:text-sm">
+                <table className="w-full min-w-[36rem] text-left text-xs lg:min-w-0 lg:text-sm">
                   <thead className="sticky top-0 bg-zinc-100/95 text-[10px] font-medium uppercase tracking-wide text-zinc-500 backdrop-blur-sm dark:bg-zinc-800/95 dark:text-zinc-400 lg:text-xs">
                     <tr>
                       <th className="px-2 py-2 lg:px-4 lg:py-3">Name</th>
@@ -1243,14 +1313,23 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                           <td className="px-2 py-1.5 align-top font-medium text-zinc-900 dark:text-zinc-100 lg:px-4 lg:py-3 lg:align-middle">
                             {row.display_name}
                           </td>
-                          <td className="px-2 py-1.5 align-top text-zinc-600 dark:text-zinc-400 lg:px-4 lg:py-3">
-                            <FocusTrackSurahList entries={row.revising} />
+                          <td className="px-2 py-1.5 align-top lg:px-4 lg:py-3">
+                            <FocusTrackCombinedList
+                              active={row.revising}
+                              completed={row.completed_revising ?? []}
+                            />
                           </td>
-                          <td className="px-2 py-1.5 align-top text-zinc-600 dark:text-zinc-400 lg:px-4 lg:py-3">
-                            <FocusTrackSurahList entries={row.memorising} />
+                          <td className="px-2 py-1.5 align-top lg:px-4 lg:py-3">
+                            <FocusTrackCombinedList
+                              active={row.memorising}
+                              completed={row.completed_memorising ?? []}
+                            />
                           </td>
-                          <td className="px-2 py-1.5 align-top text-zinc-600 dark:text-zinc-400 lg:px-4 lg:py-3">
-                            <FocusTrackSurahList entries={row.reciting} />
+                          <td className="px-2 py-1.5 align-top lg:px-4 lg:py-3">
+                            <FocusTrackCombinedList
+                              active={row.reciting}
+                              completed={row.completed_reciting ?? []}
+                            />
                           </td>
                           <td className="px-2 py-1.5 text-right align-top tabular-nums text-zinc-700 dark:text-zinc-300 lg:px-4 lg:py-3 lg:align-middle">
                             {row.pct_quran}%
@@ -1270,132 +1349,176 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 heatmap={progress?.heatmap ?? undefined}
                 currentMemberId={memberId}
                 myPctQuran={progress?.dashboard.find((r) => r.member_id === memberId)?.pct_quran ?? null}
-                onSaved={() => void loadProgress()}
+                readOnly
               />
             </div>
           ) : null}
 
-          {panel === "trajectory" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white px-5 py-8 sm:px-8 sm:py-10 dark:bg-zinc-950">
-              <div className="mx-auto hidden w-full max-w-4xl shrink-0 lg:block">
-                <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">You</span> shows distinct surahs logged under
-                  memorising by day; <span className="font-medium text-zinc-600 dark:text-zinc-300">All</span> overlays
-                  everyone in different colours. Solid lines are recorded; dashed lines are illustrative projections from
-                  recent trend (0–114 surahs).
-                </p>
-              </div>
-              <div className="mx-auto mt-0 w-full max-w-4xl min-h-0 flex-1 lg:mt-8">
-                {projectionChart.rows.length === 0 ? (
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    {projectionScope === "you" && trajectoryYouAvailable === false
-                      ? "Post memorising progress to see your projection, or choose All."
-                      : "Not enough data for a chart yet."}
+          {panel === "stats" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-white dark:bg-zinc-950">
+              <div className="mx-auto w-full max-w-4xl space-y-10 px-5 py-6 sm:px-8 sm:py-8">
+                <section className="min-w-0" aria-labelledby="stats-projections-heading">
+                  <h2
+                    id="stats-projections-heading"
+                    className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+                  >
+                    Memorisation over time
+                  </h2>
+                  <p className="mt-2 hidden text-sm leading-relaxed text-zinc-500 lg:block dark:text-zinc-400">
+                    Cumulative <span className="font-medium text-zinc-600 dark:text-zinc-300">completed</span> memorisation
+                    (distinct surahs that count toward % Quran), by calendar month.{" "}
+                    <span className="font-medium text-zinc-600 dark:text-zinc-300">You</span> is just your line;{" "}
+                    <span className="font-medium text-zinc-600 dark:text-zinc-300">All</span> shows everyone. Months are
+                    evenly spaced (0–114 surahs).
                   </p>
-                ) : (
-                  <div className="h-full w-full min-h-[280px] outline-none [&_.recharts-wrapper]:outline-none">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={projectionChart.rows}
-                        margin={{ top: 12, right: 16, left: 4, bottom: 12 }}
-                        className="outline-none"
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                        <XAxis
-                          dataKey="date"
-                          ticks={projectionChart.xTicks}
-                          tick={{ fontSize: 11 }}
-                          className="text-zinc-500"
-                          tickFormatter={(v) => formatTrajectoryXAxis(String(v), projectionChart.sortedDates)}
-                        />
-                        <YAxis
-                          domain={[0, SURAH_CHART_MAX]}
-                          ticks={SURAH_Y_TICKS}
-                          allowDecimals={false}
-                          width={40}
-                          tick={{ fontSize: 10 }}
-                          className="text-zinc-500"
-                        />
-                        <Tooltip
-                          cursor={false}
-                          formatter={(v) => {
-                            const n = typeof v === "number" ? v : Number(v) || 0;
-                            return [`${n} surah${n === 1 ? "" : "s"}`, ""];
-                          }}
-                          labelFormatter={(label) => {
-                            try {
-                              return new Intl.DateTimeFormat(undefined, {
-                                dateStyle: "medium",
-                                timeZone: "UTC",
-                              }).format(new Date(`${String(label)}T00:00:00.000Z`));
-                            } catch {
-                              return String(label);
-                            }
-                          }}
-                          contentStyle={{
-                            borderRadius: "0.75rem",
-                            border: "1px solid rgb(228 228 231)",
-                            fontSize: "11px",
-                          }}
-                        />
-                        {projectionChart.lines.map((ln) => (
-                          <Line
-                            key={ln.dataKey}
-                            type="monotone"
-                            dataKey={ln.dataKey}
-                            name={ln.name}
-                            stroke={ln.stroke}
-                            strokeWidth={projectionScope === "all" ? 1.75 : 2}
-                            strokeDasharray={ln.dashed ? "5 4" : undefined}
-                            dot={
-                              ln.dashed
-                                ? false
-                                : projectionScope === "you"
-                                  ? { r: 3 }
-                                  : { r: 2 }
-                            }
-                            activeDot={false}
-                            connectNulls={false}
-                          />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
+                  <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/40 sm:p-4">
+                    {projectionChart.rows.length === 0 ? (
+                      <p className="px-1 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                        {projectionScope === "you" && trajectoryYouAvailable === false
+                          ? "We couldn’t find your member profile for this chart — try All."
+                          : "Not enough data for a chart yet."}
+                      </p>
+                    ) : (
+                      <div className="h-[min(50vh,22rem)] min-h-[200px] w-full outline-none [&_.recharts-wrapper]:outline-none">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart
+                            data={projectionChart.rows}
+                            margin={{ top: 12, right: 16, left: 4, bottom: 12 }}
+                            className="outline-none"
+                          >
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
+                            <XAxis
+                              type="number"
+                              dataKey="monthIndex"
+                              domain={[0, Math.max(0, projectionChart.sortedDates.length - 1)]}
+                              ticks={projectionChart.xTicks}
+                              tick={{ fontSize: 11 }}
+                              className="text-zinc-500"
+                              allowDecimals={false}
+                              tickFormatter={(i) => {
+                                const ym = projectionChart.sortedDates[i as number];
+                                return ym ? formatMonthTickFromYm(ym) : "";
+                              }}
+                            />
+                            <YAxis
+                              domain={[0, SURAH_CHART_MAX]}
+                              ticks={SURAH_Y_TICKS}
+                              allowDecimals={false}
+                              width={40}
+                              tick={{ fontSize: 10 }}
+                              className="text-zinc-500"
+                            />
+                            <Tooltip
+                              cursor={false}
+                              formatter={(v) => {
+                                const n = typeof v === "number" ? v : Number(v) || 0;
+                                return [`${n} surah${n === 1 ? "" : "s"}`, ""];
+                              }}
+                              labelFormatter={(label) => {
+                                const ym = projectionChart.sortedDates[Number(label)];
+                                if (!ym) return String(label);
+                                try {
+                                  return new Intl.DateTimeFormat(undefined, {
+                                    month: "long",
+                                    year: "numeric",
+                                    timeZone: "UTC",
+                                  }).format(new Date(`${ym}-01T00:00:00.000Z`));
+                                } catch {
+                                  return ym;
+                                }
+                              }}
+                              contentStyle={{
+                                borderRadius: "0.75rem",
+                                border: "1px solid rgb(228 228 231)",
+                                fontSize: "11px",
+                              }}
+                            />
+                            {projectionChart.lines.map((ln) => (
+                              <Line
+                                key={ln.dataKey}
+                                type="monotone"
+                                dataKey={ln.dataKey}
+                                name={ln.name}
+                                stroke={ln.stroke}
+                                strokeWidth={projectionScope === "all" ? 1.75 : 2}
+                                dot={projectionScope === "you" ? { r: 3 } : { r: 2 }}
+                                activeDot={false}
+                                connectNulls={false}
+                              />
+                            ))}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-          ) : null}
+                </section>
 
-          {panel === "bars" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-6 dark:bg-zinc-950">
-              <div className="mx-auto w-full max-w-3xl shrink-0">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  % of the Quran memorised (whole surahs you’ve logged under Memorising, any order).
-                </p>
-              </div>
-              <div className="mx-auto mt-6 w-full max-w-3xl min-h-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-                {!progress || progress.leaderboard.length === 0 ? (
-                  <p className="text-sm text-zinc-500">No bars yet.</p>
-                ) : (
-                  <div className="h-full w-full min-h-[240px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={progress.leaderboard.map((r) => ({
-                          name: r.display_name.length > 14 ? `${r.display_name.slice(0, 13)}…` : r.display_name,
-                          pct: r.pct_quran,
-                        }))}
-                        layout="vertical"
-                        margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                        <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
-                        <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} />
-                        <Tooltip formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, "% Quran"]} />
-                        <Bar dataKey="pct" name="% Quran" fill="#047857" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                <section className="min-w-0 pb-4" aria-labelledby="stats-leaderboard-heading">
+                  <h2
+                    id="stats-leaderboard-heading"
+                    className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+                  >
+                    Leaderboard
+                  </h2>
+                  <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    % of the Quran memorised (whole surahs you’ve logged under Memorising, any order).
+                  </p>
+                  <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/40 sm:p-4">
+                    {!progress || progress.leaderboard.length === 0 ? (
+                      <p className="px-1 py-8 text-center text-sm text-zinc-500">No leaderboard data yet.</p>
+                    ) : (
+                      <div className="h-[min(50vh,20rem)] min-h-[180px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={progress.leaderboard.map((r) => ({
+                              name: r.display_name.length > 14 ? `${r.display_name.slice(0, 13)}…` : r.display_name,
+                              pct: r.pct_quran,
+                            }))}
+                            layout="vertical"
+                            margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
+                            <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                            <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} />
+                            <Tooltip formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, "% Quran"]} />
+                            <Bar dataKey="pct" name="% Quran" fill="#047857" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
-                )}
+                  {progress && progress.leaderboard.length > 0 ? (
+                    <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                      <table className="w-full min-w-[16rem] text-left text-sm">
+                        <thead className="border-b border-zinc-200 bg-zinc-50 text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-400 sm:text-xs">
+                          <tr>
+                            <th scope="col" className="px-4 py-3">
+                              Name
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-right tabular-nums">
+                              % Quran
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                          {progress.leaderboard.map((r) => (
+                            <tr key={r.member_id} className="bg-white dark:bg-zinc-950">
+                              <td className="px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">
+                                {r.display_name}
+                                {r.member_id === memberId ? (
+                                  <span className="ml-1.5 font-normal text-zinc-500 dark:text-zinc-400">(You)</span>
+                                ) : null}
+                              </td>
+                              <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                                {r.pct_quran}%
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </section>
               </div>
             </div>
           ) : null}
@@ -1439,6 +1562,19 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
         open={Boolean(progress?.me?.needsOnboarding)}
         onDone={() => void loadProgress()}
       />
+
+      {addGoalsOpen && progress?.me ? (
+        <AddGoalsModal
+          key={addGoalsKey}
+          memorizedSurahIds={progress.me.memorized_surah_ids}
+          initialGoals={addGoalsModalInitialFromPayload(progress.me.goals)}
+          onClose={() => setAddGoalsOpen(false)}
+          onSaved={() => {
+            setAddGoalsOpen(false);
+            void loadProgress();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
