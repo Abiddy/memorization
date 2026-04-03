@@ -262,7 +262,7 @@ export async function GET() {
     /** Surahs already memorised (same baseline as onboarding step 1). */
     memorized_surah_ids: number[];
     goals: GoalsPayload | null;
-    statusLog: { line: string; dateIso: string; dateDisplay: string }[];
+    statusLog: { eventKind: string; line: string; dateIso: string; dateDisplay: string }[];
   } | null = null;
 
   if (selfId) {
@@ -338,15 +338,19 @@ export async function GET() {
     const statusLog =
       !logErr && logRows
         ? logRows.map((r) => ({
+            eventKind: r.event_kind as string,
             line: formatStatusLogLine(
               r.event_kind as string,
               r.summary as string | null,
               r.surah as string | null
             ),
             dateIso: r.created_at as string,
-            dateDisplay: new Date(r.created_at as string).toLocaleString(undefined, {
-              dateStyle: "medium",
-              timeStyle: "short",
+            dateDisplay: new Date(r.created_at as string).toLocaleString("en-GB", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
             }),
           }))
         : [];

@@ -81,7 +81,7 @@ export function LoginForm() {
         {pending ? "Signing in…" : "Enter the club"}
       </button>
       <p className="text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-        New here? Enter a username and password to create your account. Already a member? Use the same credentials to
+        Enter a username and password to create your account. Already a member? Use the same credentials to
         sign in.
       </p>
     </form>

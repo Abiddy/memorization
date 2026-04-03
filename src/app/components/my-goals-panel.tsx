@@ -19,6 +19,8 @@ export type MyGoalsPayload = {
 };
 
 export type StatusLogEntry = {
+  /** progress_events.event_kind — drives timeline icon + colour. */
+  eventKind: string;
   line: string;
   dateIso: string;
   dateDisplay: string;
@@ -182,11 +184,79 @@ function GoalTrackCard({
   );
 }
 
+function IconTimelineCheck({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+function IconTimelineActivity({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </svg>
+  );
+}
+
+function timelineNodeForKind(kind: string): { circle: string; icon: ReactNode } {
+  switch (kind) {
+    case "memorizing":
+      return {
+        circle: "bg-emerald-100 dark:bg-emerald-950/55 ring-1 ring-emerald-200/80 dark:ring-emerald-800/60",
+        icon: <IconTrackMemorising className="h-[18px] w-[18px] text-emerald-700 dark:text-emerald-400" />,
+      };
+    case "revising":
+      return {
+        circle: "bg-indigo-100 dark:bg-indigo-950/55 ring-1 ring-indigo-200/80 dark:ring-indigo-800/60",
+        icon: <IconTrackRevising className="h-[18px] w-[18px] text-indigo-700 dark:text-indigo-400" />,
+      };
+    case "reciting":
+      return {
+        circle: "bg-amber-100 dark:bg-amber-950/55 ring-1 ring-amber-200/80 dark:ring-amber-800/60",
+        icon: <IconTrackReciting className="h-[18px] w-[18px] text-amber-800 dark:text-amber-400" />,
+      };
+    case "completed":
+      return {
+        circle: "bg-emerald-100 dark:bg-emerald-950/55 ring-1 ring-emerald-200/80 dark:ring-emerald-800/60",
+        icon: <IconTimelineCheck className="text-emerald-700 dark:text-emerald-400" />,
+      };
+    default:
+      return {
+        circle: "bg-zinc-200 dark:bg-zinc-800 ring-1 ring-zinc-300/80 dark:ring-zinc-600/60",
+        icon: <IconTimelineActivity className="text-zinc-600 dark:text-zinc-400" />,
+      };
+  }
+}
+
 function GoalsStatusLog({ entries }: { entries: StatusLogEntry[] }) {
   return (
-    <section className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800" aria-labelledby="goals-status-log-heading">
-      <h2 id="goals-status-log-heading" className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-        Status log
+    <section className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800" aria-labelledby="goals-timeline-heading">
+      <h2 id="goals-timeline-heading" className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+        Timeline
       </h2>
       {entries.length === 0 ? (
         <p className="mt-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
@@ -194,13 +264,35 @@ function GoalsStatusLog({ entries }: { entries: StatusLogEntry[] }) {
           goal completions appear here.
         </p>
       ) : (
-        <ul className="mt-3 space-y-2.5">
-          {entries.map((e, i) => (
-            <li key={`${e.dateIso}-${i}`} className="text-sm leading-snug">
-              <span className="text-zinc-800 dark:text-zinc-200">{e.line}</span>
-              <span className="text-zinc-500 dark:text-zinc-400"> — {e.dateDisplay}</span>
-            </li>
-          ))}
+        <ul className="mt-4">
+          {entries.map((e, i) => {
+            const { circle, icon } = timelineNodeForKind(e.eventKind);
+            const showLine = i < entries.length - 1;
+            return (
+              <li key={`${e.dateIso}-${i}`} className="flex gap-3.5 pb-8 last:pb-0">
+                <div className="relative flex w-11 shrink-0 flex-col items-center self-stretch">
+                  <div
+                    className={`relative z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${circle}`}
+                    aria-hidden
+                  >
+                    {icon}
+                  </div>
+                  {showLine ? (
+                    <div
+                      className="absolute left-1/2 top-11 bottom-0 z-0 w-px -translate-x-1/2 bg-zinc-200 dark:bg-zinc-700"
+                      aria-hidden
+                    />
+                  ) : null}
+                </div>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{e.line}</p>
+                  <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                    <time dateTime={e.dateIso}>{e.dateDisplay}</time>
+                  </p>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

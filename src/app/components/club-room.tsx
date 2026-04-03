@@ -1198,7 +1198,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             )}
           </div>
               </div>
-              <div className="shrink-0 border-t border-zinc-200/80 bg-white p-4 shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.08)] dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="shrink-0 border-t border-zinc-200/80 bg-transparent p-4 dark:border-zinc-800 dark:bg-transparent">
             {sendError ? (
               <p className="mb-2 text-xs text-red-600 dark:text-red-400" role="alert">
                 {sendError}
