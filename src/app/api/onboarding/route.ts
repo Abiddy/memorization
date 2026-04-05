@@ -119,7 +119,7 @@ export async function POST(request: Request) {
     }
   }
 
-  /** Active “memorising” on Current focus = goal targets only. Already-memorised surahs go to completed_* so they show green + ✓. */
+  /** Active “memorising” on Progress = goal targets only. Already-memorised surahs go to completed_* so they show green + ✓. */
   const memorizing_surahs = goalMem;
   const completed_memorizing_surahs = already;
   const revising_surahs = goalRev;

@@ -78,7 +78,7 @@ type SurahPickerListByJuzProps = {
 };
 
 /**
- * Search + Juz-grouped checkbox list (same pattern as My goals / New Goals surah pickers).
+ * Search + Juz-grouped checkbox list (same pattern as Intention / Set Intention surah pickers).
  */
 export function SurahPickerListByJuz({
   options,

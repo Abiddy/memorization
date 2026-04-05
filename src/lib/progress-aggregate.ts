@@ -32,6 +32,8 @@ export type MemberProjectionPoint = {
 export type MemberTrajectory = {
   member_id: string;
   display_name: string;
+  /** UTC calendar day the member account was created — chart starts from here. */
+  member_since_ymd: string;
   recorded: MemberSeriesPoint[];
   projection: MemberProjectionPoint[];
 };
@@ -236,6 +238,7 @@ export function buildMemorizationTimeline(
     memberTrajectories.push({
       member_id: memberId,
       display_name: displayName,
+      member_since_ymd: createdDay,
       recorded,
       projection: [],
     });

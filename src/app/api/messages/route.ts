@@ -2,18 +2,40 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isMemberOfCircle } from "@/lib/circle-service";
 
 const COOKIE = "alif_member_id";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const PostBodySchema = z.object({
   body: z.string().min(1).max(4000),
+  circleId: z.string().uuid("Invalid circle."),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const circleId = searchParams.get("circleId");
+  if (!circleId || !UUID_RE.test(circleId)) {
+    return NextResponse.json({ error: "Missing or invalid circleId." }, { status: 400 });
+  }
+
+  const cookieStore = await cookies();
+  const memberId = cookieStore.get(COOKIE)?.value;
+  if (!memberId) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
   const admin = createAdminClient();
+  const allowed = await isMemberOfCircle(admin, circleId, memberId);
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { data, error } = await admin
     .from("messages")
-    .select("id, member_id, display_name, body, created_at")
+    .select("id, member_id, display_name, body, created_at, circle_id")
+    .eq("circle_id", circleId)
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -40,10 +62,16 @@ export async function POST(request: Request) {
 
   const parsed = PostBodySchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid message" }, { status: 400 });
+    const msg = parsed.error.issues[0]?.message ?? "Invalid message";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 
   const admin = createAdminClient();
+  const allowed = await isMemberOfCircle(admin, parsed.data.circleId, memberId);
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { data: member, error: memberError } = await admin
     .from("members")
     .select("id, display_name")
@@ -61,8 +89,9 @@ export async function POST(request: Request) {
       member_id: member.id,
       display_name: member.display_name,
       body,
+      circle_id: parsed.data.circleId,
     })
-    .select("id, member_id, display_name, body, created_at")
+    .select("id, member_id, display_name, body, created_at, circle_id")
     .single();
 
   if (msgError || !msg) {

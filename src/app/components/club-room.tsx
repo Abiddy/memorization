@@ -2,19 +2,7 @@
 
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import { StructuredProgressPicker } from "@/app/components/structured-progress-picker";
 import {
   MatrixTrackLegend,
   SurahHeatmapPanel,
@@ -23,21 +11,18 @@ import {
 } from "@/app/components/surah-heatmap-panel";
 import { IconTrackMemorising, IconTrackReciting, IconTrackRevising } from "@/app/components/track-activity-icons";
 import { MyGoalsPanel, type MyGoalsPayload, type StatusLogEntry } from "@/app/components/my-goals-panel";
+import { AdminUsersPanel } from "@/app/components/admin-users-panel";
+import { CircleHubPanel } from "@/app/components/circle-hub-panel";
+import { MyCirclesListPanel, type MyCircleSummary } from "@/app/components/my-circles-panel";
+import { StatsMemorisationOverTimeStrip } from "@/app/components/stats-robinhood";
 import {
   AddGoalsModal,
   type AddGoalsModalInitial,
   OnboardingModal,
 } from "@/app/components/onboarding-modal";
 import type { MemberTrajectory } from "@/lib/progress-aggregate";
+import { buildFiveMonthMemorisationChart } from "@/lib/projection-chart";
 import { uniqueSurahsInJuz } from "@/lib/quran";
-
-type MessageRow = {
-  id: string;
-  member_id: string | null;
-  display_name: string;
-  body: string;
-  created_at: string;
-};
 
 type DashboardSurahEntry = {
   juz: number;
@@ -215,6 +200,7 @@ type ProgressMe = {
   memorized_surah_ids: number[];
   goals: MyGoalsPayload | null;
   statusLog: StatusLogEntry[];
+  is_admin?: boolean;
 };
 
 type ProgressReport = {
@@ -227,7 +213,7 @@ type ProgressReport = {
   me: ProgressMe | null;
 };
 
-type MainPanel = "chat" | "focus" | "goals" | "heatmap" | "stats";
+type MainPanel = "circles" | "focus" | "goals" | "heatmap" | "stats" | "users";
 
 type ClearFocusTrack = "memorizing" | "revising" | "reciting";
 
@@ -275,19 +261,8 @@ const NAV: {
   Icon: (props: { className?: string }) => ReactNode;
 }[] = [
   {
-    id: "chat",
-    label: "Suhbah",
-    Icon: function IconChat({ className }: { className?: string }) {
-      return (
-        <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      );
-    },
-  },
-  {
     id: "goals",
-    label: "My goals",
+    label: "Intention",
     Icon: function IconGoals({ className }: { className?: string }) {
       return (
         <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -299,13 +274,44 @@ const NAV: {
     },
   },
   {
-    id: "focus",
-    label: "Current focus",
-    Icon: function IconFocus({ className }: { className?: string }) {
+    id: "circles",
+    label: "Circles",
+    Icon: function IconCircles({ className }: { className?: string }) {
       return (
-        <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <circle cx="12" cy="12" r="10" />
-          <circle cx="12" cy="12" r="3" />
+        <svg
+          className={className}
+          width="18"
+          height="18"
+          viewBox="0 -960 960 960"
+          fill="currentColor"
+          aria-hidden
+        >
+          <path d="M671-383.08q24.54 1.23 48.38-2.34 23.85-3.58 46.54-12.35-15.61 123.69-108.31 205.73Q564.92-110 440-110q-68.46 0-128.58-26-60.11-26-104.76-70.66Q162-251.31 136-311.42 110-371.54 110-440q0-124.92 82.04-217.42 82.04-92.5 205.73-108.89-8.77 22.7-12.35 46.73-3.57 24.04-2.34 48.58-80.46 19.23-131.77 83.35Q200-523.54 200-440q0 100 70 170t170 70q83.54 0 148.04-51.31 64.5-51.31 82.96-131.77Zm9-513.84q90.38 0 153.65 63.27 63.27 63.27 63.27 153.65t-63.27 153.65Q770.38-463.08 680-463.08t-153.65-63.27Q463.08-589.62 463.08-680t63.27-153.65q63.27-63.27 153.65-63.27Zm0 343.84q52.88 0 89.9-37.02t37.02-89.9q0-52.88-37.02-89.9T680-806.92q-52.88 0-89.9 37.02T553.08-680q0 52.88 37.02 89.9t89.9 37.02ZM680-680ZM435.69-435.69Z" />
+        </svg>
+      );
+    },
+  },
+  {
+    id: "focus",
+    label: "Progress",
+    Icon: function IconProgress({ className }: { className?: string }) {
+      return (
+        <svg
+          className={className}
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <rect x="3" y="4" width="18" height="16" rx="1.5" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+          <line x1="3" y1="16" x2="21" y2="16" />
+          <line x1="12" y1="4" x2="12" y2="20" />
         </svg>
       );
     },
@@ -340,16 +346,20 @@ const NAV: {
   },
 ];
 
-function formatTime(iso: string) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return "";
-  }
-}
+const USERS_NAV_ITEM: (typeof NAV)[number] = {
+  id: "users",
+  label: "Users",
+  Icon: function IconUsers({ className }: { className?: string }) {
+    return (
+      <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    );
+  },
+};
 
 function avatarBackground(name: string): string {
   let h = 0;
@@ -358,31 +368,20 @@ function avatarBackground(name: string): string {
   return `hsl(${hue} 42% 88%)`;
 }
 
-function formatMessageBody(text: string): ReactNode {
-  const parts = text.split(/(@[\w.-]+)/g);
-  return parts.map((part, i) =>
-    part.startsWith("@") ? (
-      <span key={i} className="font-medium text-violet-600 dark:text-violet-400">
-        {part}
-      </span>
-    ) : (
-      <span key={i}>{part}</span>
-    )
-  );
-}
-
 function panelTitle(p: MainPanel): string {
   switch (p) {
-    case "chat":
-      return "Suhbah";
+    case "circles":
+      return "Circles";
     case "focus":
-      return "Current focus";
+      return "Progress";
     case "goals":
-      return "My goals";
+      return "Intention";
     case "heatmap":
       return "Surah matrix";
     case "stats":
       return "Stats";
+    case "users":
+      return "Users";
     default:
       return "Club";
   }
@@ -435,6 +434,7 @@ function ClubSideNav({
   onLogout,
   closeOnNavigate,
   onNavigate,
+  isAdmin,
 }: {
   panel: MainPanel;
   onSelectPanel: (p: MainPanel) => void;
@@ -442,16 +442,19 @@ function ClubSideNav({
   onLogout: () => void;
   closeOnNavigate?: boolean;
   onNavigate?: () => void;
+  isAdmin: boolean;
 }) {
   function pick(p: MainPanel) {
     onSelectPanel(p);
     if (closeOnNavigate) onNavigate?.();
   }
 
+  const navItems = isAdmin ? [...NAV, USERS_NAV_ITEM] : NAV;
+
   return (
     <>
       <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3 pt-3" aria-label="Club navigation">
-        {NAV.map((item) => {
+        {navItems.map((item) => {
           const active = panel === item.id;
           const Icon = item.Icon;
           return (
@@ -502,205 +505,6 @@ function ClubSideNav({
 
 type MemberBrief = { id: string; display_name: string };
 
-const TRAJECTORY_PALETTE = [
-  "#047857",
-  "#2563eb",
-  "#b45309",
-  "#7c3aed",
-  "#db2777",
-  "#0891b2",
-  "#4f46e5",
-  "#65a30d",
-  "#ea580c",
-  "#0d9488",
-  "#c026d3",
-  "#ca8a04",
-  "#16a34a",
-  "#9333ea",
-];
-
-const SURAH_CHART_MAX = 114;
-const SURAH_Y_TICKS = [0, 19, 38, 57, 76, 95, 114];
-
-/** YYYY-MM-DD for “today” in UTC — matches stored progress day keys. */
-function utcTodayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function dateToYm(ymd: string): string {
-  return ymd.slice(0, 7);
-}
-
-/** Last calendar day of month `YYYY-MM` (UTC). */
-function lastDayOfMonthYm(ym: string): string {
-  const [y, m] = ym.split("-").map(Number);
-  if (!y || !m) return ym;
-  const d = new Date(Date.UTC(y, m, 0));
-  return d.toISOString().slice(0, 10);
-}
-
-/** Inclusive list of `YYYY-MM` from `fromYm` through `toYm`. */
-function enumerateMonthsInclusive(fromYm: string, toYm: string): string[] {
-  if (fromYm > toYm) return [toYm];
-  const out: string[] = [];
-  let y = Number(fromYm.slice(0, 4));
-  let mo = Number(fromYm.slice(5, 7));
-  const endY = Number(toYm.slice(0, 4));
-  const endM = Number(toYm.slice(5, 7));
-  if (!y || !mo || !endY || !endM) return [toYm];
-  while (y < endY || (y === endY && mo <= endM)) {
-    out.push(`${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}`);
-    mo += 1;
-    if (mo > 12) {
-      mo = 1;
-      y += 1;
-    }
-  }
-  return out;
-}
-
-/** `recorded` sorted by `date` ascending — cumulative surahs memorised on or before `ymd`. */
-function surahsOnOrBefore(recorded: { date: string; surahs: number }[], ymd: string): number {
-  let v = 0;
-  for (const p of recorded) {
-    if (p.date <= ymd) v = p.surahs;
-    else break;
-  }
-  return v;
-}
-
-function formatMonthTickFromYm(ym: string): string {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      year: "2-digit",
-      timeZone: "UTC",
-    }).format(new Date(`${ym}-15T00:00:00.000Z`));
-  } catch {
-    return ym;
-  }
-}
-
-type TrajectoryLineSpec = {
-  dataKey: string;
-  name: string;
-  stroke: string;
-  dashed?: boolean;
-};
-
-/**
- * Equal-spaced months on the X axis; Y = cumulative completed memorisation (distinct surahs toward % Quran).
- */
-function buildProjectionChart(
-  trajs: MemberTrajectory[],
-  scope: "you" | "all",
-  selfId: string | undefined
-): {
-  rows: Record<string, string | number | undefined>[];
-  lines: TrajectoryLineSpec[];
-  /** `YYYY-MM` for each column (same order as `monthIndex`). */
-  sortedDates: string[];
-  xTicks: number[];
-} {
-  if (trajs.length === 0) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
-
-  const list =
-    scope === "you"
-      ? selfId
-        ? trajs.filter((t) => t.member_id === selfId)
-        : []
-      : [...trajs].sort((a, b) => a.display_name.localeCompare(b.display_name));
-
-  if (list.length === 0) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
-
-  const todayYm = utcTodayIso().slice(0, 7);
-  let minYm = todayYm;
-  for (const t of list) {
-    for (const p of t.recorded) {
-      const ym = dateToYm(p.date);
-      if (ym < minYm) minYm = ym;
-    }
-  }
-  const cap = new Date();
-  cap.setUTCFullYear(cap.getUTCFullYear() - 3);
-  const capYm = cap.toISOString().slice(0, 7);
-  if (minYm < capYm) minYm = capYm;
-
-  const months = enumerateMonthsInclusive(minYm, todayYm);
-  if (months.length === 0) return { rows: [], lines: [], sortedDates: [], xTicks: [] };
-
-  const rows: Record<string, string | number | undefined>[] = months.map((ym, monthIndex) => {
-    const monthEnd = lastDayOfMonthYm(ym);
-    const row: Record<string, string | number | undefined> = {
-      monthIndex,
-      monthYm: ym,
-    };
-    for (const t of list) {
-      row[`s_${t.member_id}`] = surahsOnOrBefore(t.recorded, monthEnd);
-    }
-    return row;
-  });
-
-  const sortedIds = list.map((t) => t.member_id);
-  const lines: TrajectoryLineSpec[] = list.map((t) => ({
-    dataKey: `s_${t.member_id}`,
-    name: t.display_name,
-    stroke: TRAJECTORY_PALETTE[sortedIds.indexOf(t.member_id) % TRAJECTORY_PALETTE.length] ?? "#047857",
-  }));
-
-  const n = months.length;
-  const step = n > 20 ? Math.ceil(n / 10) : n > 14 ? 2 : 1;
-  const xTicks: number[] = [];
-  for (let i = 0; i < n; i += step) xTicks.push(i);
-  if (xTicks[xTicks.length - 1] !== n - 1) xTicks.push(n - 1);
-
-  return { rows, lines, sortedDates: months, xTicks };
-}
-
-function ProjectionsScopeToggle({
-  value,
-  onChange,
-  youDisabled,
-}: {
-  value: "you" | "all";
-  onChange: (v: "you" | "all") => void;
-  youDisabled?: boolean;
-}) {
-  return (
-    <div
-      className="flex shrink-0 items-center rounded-full border border-zinc-200/90 bg-zinc-100/80 p-0.5 dark:border-zinc-600 dark:bg-zinc-800/60"
-      role="group"
-      aria-label="Projection scope"
-    >
-      <button
-        type="button"
-        aria-pressed={value === "you"}
-        disabled={youDisabled}
-        onClick={() => onChange("you")}
-        className={`rounded-full px-2.5 py-1 text-xs font-medium transition sm:px-3 sm:text-sm ${
-          value === "you"
-            ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
-            : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-        } disabled:cursor-not-allowed disabled:opacity-45`}
-      >
-        You
-      </button>
-      <button
-        type="button"
-        aria-pressed={value === "all"}
-        onClick={() => onChange("all")}
-        className={`rounded-full px-2.5 py-1 text-xs font-medium transition sm:px-3 sm:text-sm ${
-          value === "all"
-            ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
-            : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-        }`}
-      >
-        All
-      </button>
-    </div>
-  );
-}
-
 function IconChevronDownSm({ className }: { className?: string }) {
   return (
     <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -741,15 +545,22 @@ function GroupMemberStack({
   currentMemberId,
   onCopyGroupLink,
   inviteCopied,
+  showLeaveGroup,
+  onLeaveGroup,
   className = "",
 }: {
   members: MemberBrief[];
   currentMemberId: string;
   onCopyGroupLink: () => void;
   inviteCopied: boolean;
+  /** When true (e.g. viewing a circle from Circles), show Leave group in the roster menu. */
+  showLeaveGroup?: boolean;
+  onLeaveGroup?: () => Promise<void>;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -891,6 +702,36 @@ function GroupMemberStack({
               })
             )}
           </ul>
+          {showLeaveGroup && onLeaveGroup ? (
+            <div className="border-t border-zinc-200 p-2 dark:border-zinc-700">
+              {leaveError ? (
+                <p className="mb-2 px-2 text-xs text-red-600 dark:text-red-400" role="alert">
+                  {leaveError}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                disabled={leaveBusy}
+                onClick={() => {
+                  void (async () => {
+                    setLeaveError(null);
+                    setLeaveBusy(true);
+                    try {
+                      await onLeaveGroup();
+                      setOpen(false);
+                    } catch (e) {
+                      setLeaveError(e instanceof Error ? e.message : "Could not leave the group.");
+                    } finally {
+                      setLeaveBusy(false);
+                    }
+                  })();
+                }}
+                className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
+              >
+                {leaveBusy ? "Leaving…" : "Leave group"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -898,18 +739,11 @@ function GroupMemberStack({
 }
 
 export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; initialDisplayName: string }) {
-  const [panel, setPanel] = useState<MainPanel>("chat");
+  const [panel, setPanel] = useState<MainPanel>("goals");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [messages, setMessages] = useState<MessageRow[]>([]);
-  const [draft, setDraft] = useState("");
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [sendHint, setSendHint] = useState<string | null>(null);
-  const [loadingMessages, setLoadingMessages] = useState(true);
   const [progress, setProgress] = useState<ProgressReport | null>(null);
   const [groupMembers, setGroupMembers] = useState<MemberBrief[]>([]);
   const [inviteCopied, setInviteCopied] = useState(false);
-  const [projectionScope, setProjectionScope] = useState<"you" | "all">("you");
-  const listRef = useRef<HTMLDivElement>(null);
   const inviteCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [addGoalsOpen, setAddGoalsOpen] = useState(false);
   const [addGoalsKey, setAddGoalsKey] = useState(0);
@@ -918,12 +752,14 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   const [clearTrackBusy, setClearTrackBusy] = useState(false);
   const [clearTrackError, setClearTrackError] = useState<string | null>(null);
   const clearTracksRootRef = useRef<HTMLDivElement>(null);
+  const [myCircle, setMyCircle] = useState<MyCircleSummary | null>(null);
+  const [circleHub, setCircleHub] = useState<MyCircleSummary | null>(null);
 
-  const loadMessages = useCallback(async () => {
-    const res = await fetch("/api/messages");
+  const refreshMyCircle = useCallback(async () => {
+    const res = await fetch("/api/circles/mine");
     if (!res.ok) return;
-    const data = (await res.json()) as { messages?: MessageRow[] };
-    setMessages(data.messages ?? []);
+    const d = (await res.json()) as { circle: MyCircleSummary | null };
+    setMyCircle(d.circle ?? null);
   }, []);
 
   const loadProgress = useCallback(async () => {
@@ -935,6 +771,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
       ? {
           ...rawMe,
           memorized_surah_ids: rawMe.memorized_surah_ids ?? [],
+          is_admin: rawMe.is_admin ?? false,
         }
       : null;
     setProgress({
@@ -955,17 +792,39 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     setGroupMembers(data.members ?? []);
   }, []);
 
+  const handleLeaveCircle = useCallback(async () => {
+    const res = await fetch("/api/circles/leave", { method: "POST" });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      throw new Error(data.error ?? "Could not leave the group.");
+    }
+    setCircleHub(null);
+    await refreshMyCircle();
+    await loadMembers();
+    await loadProgress();
+  }, [refreshMyCircle, loadMembers, loadProgress]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoadingMessages(true);
-      await Promise.all([loadMessages(), loadProgress(), loadMembers()]);
-      if (!cancelled) setLoadingMessages(false);
+      await refreshMyCircle();
+      if (cancelled) return;
+      await Promise.all([loadProgress(), loadMembers()]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadMessages, loadProgress, loadMembers]);
+  }, [refreshMyCircle, loadProgress, loadMembers]);
+
+  useEffect(() => {
+    if (panel === "users" && !progress?.me?.is_admin) {
+      setPanel("goals");
+    }
+  }, [panel, progress?.me?.is_admin]);
+
+  useEffect(() => {
+    if (panel !== "circles") setCircleHub(null);
+  }, [panel]);
 
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -975,17 +834,6 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     const supabase = createBrowserSupabaseClient();
     const channel = supabase
       .channel("club-room")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
-          const row = payload.new as MessageRow;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === row.id)) return prev;
-            return [...prev, row];
-          });
-        }
-      )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "progress_events" },
@@ -1005,6 +853,14 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
         { event: "INSERT", schema: "public", table: "members" },
         () => {
           void loadMembers();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "members" },
+        () => {
+          void loadMembers();
+          void loadProgress();
         }
       )
       .on(
@@ -1029,10 +885,27 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   }, [loadProgress, loadMembers]);
 
   useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages.length, panel]);
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+
+    const supabase = createBrowserSupabaseClient();
+    const channel = supabase
+      .channel("club-room-circle-roster")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "circle_members" },
+        () => {
+          void refreshMyCircle();
+          void loadMembers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshMyCircle, loadMembers]);
 
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -1063,9 +936,13 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     }
   }, [mobileNavOpen]);
 
-  const projectionChart = useMemo(() => {
-    return buildProjectionChart(progress?.memberTrajectories ?? [], projectionScope, memberId ?? undefined);
-  }, [progress?.memberTrajectories, projectionScope, memberId]);
+  const fiveMonthChart = useMemo(() => {
+    return buildFiveMonthMemorisationChart(
+      progress?.memberTrajectories ?? [],
+      "you",
+      memberId ?? undefined
+    );
+  }, [progress?.memberTrajectories, memberId]);
 
   const trajectoryYouAvailable = useMemo(() => {
     if (!memberId || !progress?.memberTrajectories?.length) return false;
@@ -1119,10 +996,6 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   }
 
   useEffect(() => {
-    if (!trajectoryYouAvailable && projectionScope === "you") setProjectionScope("all");
-  }, [trajectoryYouAvailable, projectionScope]);
-
-  useEffect(() => {
     if (!clearTrackConfirm) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && !clearTrackBusy) setClearTrackConfirm(null);
@@ -1151,103 +1024,6 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     };
   }, []);
 
-  async function sendMessage(e: React.FormEvent) {
-    e.preventDefault();
-    setSendError(null);
-    setSendHint(null);
-    const body = draft.trim();
-    if (!body) return;
-    const res = await fetch("/api/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body }),
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      error?: string;
-      message?: MessageRow;
-    };
-    if (!res.ok) {
-      setSendError(data.error ?? "Could not send.");
-      return;
-    }
-    if (data.message) {
-      setMessages((prev) => (prev.some((m) => m.id === data.message!.id) ? prev : [...prev, data.message!]));
-    }
-    setDraft("");
-  }
-
-  function renderMessageBubble(m: MessageRow) {
-    const mine = m.member_id === memberId;
-    const label = mine ? "You" : m.display_name;
-    const initial = (mine ? initialDisplayName : m.display_name).trim().slice(0, 1).toUpperCase() || "?";
-    const bg = avatarBackground(mine ? initialDisplayName : m.display_name);
-    const time = formatTime(m.created_at);
-
-    const bubble = (
-      <div className="inline-block max-w-[min(560px,calc(100vw-2rem))] rounded-2xl bg-[#F3F4F6] px-4 py-2.5 text-sm leading-relaxed text-zinc-900 sm:max-w-[min(560px,calc(100vw-220px-4rem))] dark:bg-zinc-800 dark:text-zinc-100">
-        <p className="whitespace-pre-wrap">{formatMessageBody(m.body)}</p>
-      </div>
-    );
-
-    const avatar = (
-      <div className="relative h-10 w-10 shrink-0">
-        <div
-          className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-zinc-700 dark:text-zinc-200"
-          style={{ backgroundColor: bg }}
-        >
-          {initial}
-        </div>
-        <span
-          className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-950"
-          aria-hidden
-        />
-      </div>
-    );
-
-    if (mine) {
-      return (
-        <div className="flex w-full justify-end">
-          <div className="max-w-[min(640px,calc(100%-0.5rem))]">
-            {/* Indent so “You · time” lines up with the bubble’s right edge (avatar sits past that). */}
-            <div className="mb-1.5 pr-[3.25rem] text-right text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
-              <span className="font-medium text-zinc-600 dark:text-zinc-400">{label}</span>
-              <span className="text-zinc-400"> · </span>
-              <time className="tabular-nums text-zinc-400 dark:text-zinc-500" dateTime={m.created_at}>
-                {time}
-              </time>
-            </div>
-            <div className="flex flex-row-reverse items-end justify-end gap-3">
-              {avatar}
-              <div className="min-w-0 max-w-[min(560px,calc(100vw-2rem))] sm:max-w-[min(560px,calc(100vw-220px-4rem))]">
-                {bubble}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="w-full max-w-[min(640px,100%)]">
-        {/* Spacer matches avatar width so name/time line up with the bubble, not the avatar */}
-        <div className="mb-1.5 flex gap-3">
-          <div className="w-10 shrink-0" aria-hidden />
-          <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
-            <span className="font-medium text-zinc-600 dark:text-zinc-400">{label}</span>
-            <span className="text-zinc-400">·</span>
-            <time className="tabular-nums text-zinc-400 dark:text-zinc-500" dateTime={m.created_at}>
-              {time}
-            </time>
-          </div>
-        </div>
-        <div className="flex flex-row items-end gap-3">
-          {avatar}
-          <div className="min-w-0 flex-1">{bubble}</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#ececec] dark:bg-zinc-950">
       {/* One continuous rule under brand + current view */}
@@ -1255,33 +1031,81 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
         <div className="hidden h-14 w-[220px] shrink-0 items-center border-r border-black/[0.06] bg-[#f4f4f4] pl-5 pr-3 dark:border-zinc-800 dark:bg-zinc-900 lg:flex">
           <ClubBrandTitle />
         </div>
-        <div className="flex h-14 min-w-0 flex-1 items-center justify-between gap-2 bg-white px-3 sm:gap-3 sm:px-5 dark:bg-zinc-950">
+        <div
+          className={`flex min-w-0 flex-1 items-center justify-between gap-2 bg-white px-3 sm:gap-3 sm:px-5 dark:bg-zinc-950 ${
+            circleHub ? "min-h-14 py-2" : "h-14"
+          }`}
+        >
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
-        <button
-          type="button"
-              onClick={() => setMobileNavOpen((o) => !o)}
-              className="shrink-0 rounded-lg p-2 text-zinc-600 outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950 lg:hidden"
-              aria-expanded={mobileNavOpen}
-              aria-controls="club-mobile-nav"
-            >
-              <IconMenu className="h-6 w-6" />
-              <span className="sr-only">{mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}</span>
-        </button>
-            <div className="flex min-w-0 items-center gap-2 text-base font-semibold text-zinc-800 dark:text-zinc-200 sm:gap-2.5 sm:text-lg">
-              <span className="truncate">{panelTitle(panel)}</span>
-              {panel === "heatmap" ? <SurahMatrixHelpButton /> : null}
-            </div>
+            {circleHub ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setCircleHub(null)}
+                  className="shrink-0 rounded-lg p-2 text-zinc-600 outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950"
+                  aria-label="Back to Circles"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden
+                  >
+                    <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100 sm:text-lg">
+                    {circleHub.name}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {circleHub.member_count} member{circleHub.member_count === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen((o) => !o)}
+                  className="shrink-0 rounded-lg p-2 text-zinc-600 outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950 lg:hidden"
+                  aria-expanded={mobileNavOpen}
+                  aria-controls="club-mobile-nav"
+                >
+                  <IconMenu className="h-6 w-6" />
+                  <span className="sr-only">
+                    {mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+                  </span>
+                </button>
+                <div className="flex min-w-0 items-center gap-2 text-base font-semibold text-zinc-800 dark:text-zinc-200 sm:gap-2.5 sm:text-lg">
+                  <span className="truncate">{panelTitle(panel)}</span>
+                  {panel === "heatmap" ? <SurahMatrixHelpButton /> : null}
+                </div>
+              </>
+            )}
           </div>
           {panel === "heatmap" ? (
             <div className="flex min-w-0 max-w-[min(52vw,13.5rem)] shrink-0 items-center justify-end pl-1 sm:max-w-none sm:pl-2">
               <MatrixTrackLegend className="text-right leading-tight" />
             </div>
-          ) : panel === "stats" ? (
-            <ProjectionsScopeToggle
-              value={projectionScope}
-              onChange={setProjectionScope}
-              youDisabled={!trajectoryYouAvailable}
-            />
+          ) : panel === "stats" || panel === "focus" ? (
+            <div className="w-8 shrink-0 sm:w-10" aria-hidden />
+          ) : panel === "circles" && circleHub ? (
+            <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
+              <GroupMemberStack
+                members={groupMembers}
+                currentMemberId={memberId}
+                onCopyGroupLink={copyInviteLink}
+                inviteCopied={inviteCopied}
+                showLeaveGroup
+                onLeaveGroup={handleLeaveCircle}
+              />
+            </div>
+          ) : panel === "circles" ? (
+            <div className="w-8 shrink-0 sm:w-10" aria-hidden />
           ) : panel === "goals" ? (
             <div className="flex shrink-0 items-center gap-2">
               <button
@@ -1289,7 +1113,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 disabled={addNewGoalsFullyBlocked}
                 title={
                   addNewGoalsFullyBlocked
-                    ? "Complete your goals in this track to set a new one!"
+                    ? "Complete your intention on this track before setting a new one."
                     : undefined
                 }
                 onClick={() => {
@@ -1298,7 +1122,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 }}
                 className="rounded-full border border-zinc-300 bg-zinc-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45 dark:border-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:opacity-40"
               >
-                Add New Goals +
+                Set Intention
               </button>
               <div ref={clearTracksRootRef} className="relative">
                 <button
@@ -1385,79 +1209,34 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             onSelectPanel={setPanel}
             initialDisplayName={initialDisplayName}
             onLogout={logout}
+            isAdmin={progress?.me?.is_admin ?? false}
           />
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-zinc-950">
         <div className="flex min-h-0 flex-1 flex-col">
-          {panel === "chat" ? (
-            <>
-          <div
-            ref={listRef}
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white dark:bg-zinc-950"
-            aria-live="polite"
-          >
-                <div className="flex flex-col items-start gap-6 px-5 py-8">
-            {loadingMessages ? (
-              <p className="text-sm text-zinc-500">Loading messages…</p>
-            ) : messages.length === 0 ? (
-              <p className="text-sm text-zinc-500">No messages yet. Say salam below.</p>
-            ) : (
-              messages.map((m) => (
-                      <article key={m.id} className="w-full">
-                        {renderMessageBubble(m)}
-                </article>
-              ))
-            )}
-          </div>
-              </div>
-              <div className="shrink-0 border-t border-zinc-200/80 bg-transparent p-4 dark:border-zinc-800 dark:bg-transparent">
-            {sendError ? (
-              <p className="mb-2 text-xs text-red-600 dark:text-red-400" role="alert">
-                {sendError}
-              </p>
-            ) : null}
-            {sendHint ? (
-              <p className="mb-2 text-xs text-emerald-700 dark:text-emerald-400">{sendHint}</p>
-            ) : null}
-                <form
-                  onSubmit={(e) => void sendMessage(e)}
-                  className="flex flex-row items-center gap-1.5 rounded-2xl border border-zinc-200 bg-zinc-50/80 py-1.5 pl-2 pr-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
-                >
-                  <StructuredProgressPicker
-                    memorizedSurahIds={progress?.me?.memorized_surah_ids ?? []}
-                    onPosted={() => {
-                      void loadMessages();
-                      void loadProgress();
-                      setSendHint("Progress posted — it appears in chat and Current focus.");
-                    }}
-                    onError={(msg) => setSendError(msg)}
-                  />
-                  <div
-                    className="hidden h-6 w-px shrink-0 bg-zinc-200 sm:block dark:bg-zinc-600"
-                    aria-hidden
-                  />
-                  <label className="sr-only" htmlFor="club-message-input">
-                    Message
-                  </label>
-              <input
-                    id="club-message-input"
-                type="text"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                maxLength={4000}
-                placeholder="Write a message…"
-                    className="min-h-10 min-w-0 flex-1 border-0 bg-transparent py-2 pl-0.5 text-sm leading-normal text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-              />
-              <button
-                type="submit"
-                    className="shrink-0 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-              >
-                Send
-              </button>
-          </form>
-              </div>
-            </>
+          {panel === "circles" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-950">
+              {circleHub ? (
+                <CircleHubPanel
+                  circle={circleHub}
+                  memberId={memberId}
+                  initialDisplayName={initialDisplayName}
+                  memorizedSurahIds={progress?.me?.memorized_surah_ids ?? []}
+                  onProgressDataUpdated={() => void loadProgress()}
+                />
+              ) : (
+                <MyCirclesListPanel
+                  circle={myCircle}
+                  onOpenCircle={(c) => setCircleHub(c)}
+                  onCircleUpdated={() => {
+                    void refreshMyCircle();
+                    void loadMembers();
+                    void loadProgress();
+                  }}
+                />
+              )}
+            </div>
           ) : null}
 
           {panel === "goals" ? (
@@ -1475,86 +1254,91 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           ) : null}
 
           {panel === "focus" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white p-3 dark:bg-zinc-950 lg:p-6">
-              <div className="mx-auto hidden w-full max-w-5xl shrink-0 lg:block">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-950">
+              <div className="hidden shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800 lg:block lg:px-5">
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">Memorising</span>,{" "}
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">revising</span>, and{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">reciting</span> come from the chat picker (
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">reciting</span> come from your circle&apos;s{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">Chat</span> tab (
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">I am…</span>). Surahs marked done from{" "}
-                  <span className="font-medium text-zinc-600 dark:text-zinc-300">My goals</span> appear in the same column in{" "}
+                  <span className="font-medium text-zinc-600 dark:text-zinc-300">Intention</span> show as{" "}
                   <span className="font-medium text-emerald-700 dark:text-emerald-400">green with a checkmark</span>; other surahs are
                   in progress. The Surah matrix is view-only.{" "}
                   <span className="font-medium text-zinc-600 dark:text-zinc-300">% Quran</span> reflects surahs you have memorised.
                 </p>
               </div>
-              <div className="mx-auto mt-0 w-full max-w-5xl min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40 lg:mt-6 lg:rounded-xl">
-                <table className="w-full min-w-[36rem] text-left text-xs lg:min-w-0 lg:text-sm">
-                  <thead className="sticky top-0 bg-zinc-100/95 text-[10px] font-medium uppercase tracking-wide text-zinc-500 backdrop-blur-sm dark:bg-zinc-800/95 dark:text-zinc-400 lg:text-xs">
-                    <tr>
-                      <th className="px-2 py-2 lg:px-4 lg:py-3">Name</th>
-                      <th className="px-2 py-2 lg:px-4 lg:py-3">
-                        <span className="inline-flex items-center gap-1.5">
-                          <IconTrackRevising className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-400 lg:h-4 lg:w-4" />
-                          Revising
-                        </span>
-                      </th>
-                      <th className="px-2 py-2 lg:px-4 lg:py-3">
-                        <span className="inline-flex items-center gap-1.5">
-                          <IconTrackMemorising className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400 lg:h-4 lg:w-4" />
-                          Memorising
-                        </span>
-                      </th>
-                      <th className="px-2 py-2 lg:px-4 lg:py-3">
-                        <span className="inline-flex items-center gap-1.5">
-                          <IconTrackReciting className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400 lg:h-4 lg:w-4" />
-                          Reciting
-                        </span>
-                      </th>
-                      <th className="px-2 py-2 text-right lg:px-4 lg:py-3">% Quran</th>
-                  </tr>
-                </thead>
-                <tbody>
-                    {!progress || progress.dashboard.length === 0 ? (
-                    <tr>
-                        <td colSpan={5} className="px-2 py-8 text-center text-zinc-500 lg:px-4 lg:py-10">
-                          No members yet.
-                      </td>
-                    </tr>
-                  ) : (
-                      progress.dashboard.map((row) => (
-                        <tr key={row.member_id} className="border-t border-zinc-200 dark:border-zinc-800">
-                          <td className="px-2 py-1.5 align-top font-medium text-zinc-900 dark:text-zinc-100 lg:px-4 lg:py-3 lg:align-middle">
-                            {row.display_name}
-                          </td>
-                          <td className="px-2 py-1.5 align-top lg:px-4 lg:py-3">
-                            <FocusTrackCombinedList
-                              active={row.revising}
-                              completed={row.completed_revising ?? []}
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 align-top lg:px-4 lg:py-3">
-                            <FocusTrackCombinedList
-                              active={row.memorising}
-                              completed={row.completed_memorising ?? []}
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 align-top lg:px-4 lg:py-3">
-                            <FocusTrackCombinedList
-                              active={row.reciting}
-                              completed={row.completed_reciting ?? []}
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 text-right align-top tabular-nums text-zinc-700 dark:text-zinc-300 lg:px-4 lg:py-3 lg:align-middle">
-                            {row.pct_quran}%
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+                {(() => {
+                  const myRow = progress?.dashboard.find((r) => r.member_id === memberId) ?? null;
+                  if (!progress || progress.dashboard.length === 0 || !myRow) {
+                    return (
+                      <p className="px-4 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                        {!progress ? "Loading…" : "No progress data yet."}
+                      </p>
+                    );
+                  }
+                  const labelClass =
+                    "flex w-[6.75rem] shrink-0 flex-col gap-1 text-xs font-semibold leading-tight text-zinc-700 dark:text-zinc-200 sm:w-36 sm:text-sm";
+                  const rowClass =
+                    "flex gap-3 border-b border-zinc-200 py-3 pl-3 pr-3 sm:gap-4 sm:pl-4 sm:pr-4 dark:border-zinc-800";
+                  return (
+                    <dl className="w-full max-w-none text-xs sm:text-sm">
+                      <div className={rowClass}>
+                        <dt className={labelClass}>
+                          <span className="inline-flex items-center gap-1.5">
+                            <IconTrackRevising className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                            Revising
+                          </span>
+                        </dt>
+                        <dd className="min-w-0 flex-1">
+                          <FocusTrackCombinedList
+                            active={myRow.revising}
+                            completed={myRow.completed_revising ?? []}
+                          />
+                        </dd>
+                      </div>
+                      <div className={rowClass}>
+                        <dt className={labelClass}>
+                          <span className="inline-flex items-center gap-1.5">
+                            <IconTrackMemorising className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                            Memorising
+                          </span>
+                        </dt>
+                        <dd className="min-w-0 flex-1">
+                          <FocusTrackCombinedList
+                            active={myRow.memorising}
+                            completed={myRow.completed_memorising ?? []}
+                          />
+                        </dd>
+                      </div>
+                      <div className={rowClass}>
+                        <dt className={labelClass}>
+                          <span className="inline-flex items-center gap-1.5">
+                            <IconTrackReciting className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            Reciting
+                          </span>
+                        </dt>
+                        <dd className="min-w-0 flex-1">
+                          <FocusTrackCombinedList
+                            active={myRow.reciting}
+                            completed={myRow.completed_reciting ?? []}
+                          />
+                        </dd>
+                      </div>
+                      <div className={rowClass}>
+                        <dt className={labelClass}>
+                          <span className="inline-flex items-center gap-1.5 pt-0.5">% Quran</span>
+                        </dt>
+                        <dd className="min-w-0 flex-1 tabular-nums text-base font-semibold text-zinc-900 dark:text-zinc-100 sm:pt-0.5">
+                          {myRow.pct_quran}%
+                        </dd>
+                      </div>
+                    </dl>
+                  );
+                })()}
+              </div>
             </div>
-          </div>
           ) : null}
 
           {panel === "heatmap" ? (
@@ -1569,191 +1353,82 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           ) : null}
 
           {panel === "stats" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-white dark:bg-zinc-950">
-              <div className="mx-auto w-full max-w-4xl space-y-10 px-5 py-6 sm:px-8 sm:py-8">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-zinc-950">
+              <div className="mx-auto w-full max-w-4xl space-y-10 py-6 sm:py-8">
                 <section className="min-w-0" aria-labelledby="stats-projections-heading">
-                  <h2
-                    id="stats-projections-heading"
-                    className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
-                  >
-                    Memorisation over time
-                  </h2>
-                  <p className="mt-2 hidden text-sm leading-relaxed text-zinc-500 lg:block dark:text-zinc-400">
-                    Cumulative <span className="font-medium text-zinc-600 dark:text-zinc-300">completed</span> memorisation
-                    (distinct surahs that count toward % Quran), by calendar month.{" "}
-                    <span className="font-medium text-zinc-600 dark:text-zinc-300">You</span> is just your line;{" "}
-                    <span className="font-medium text-zinc-600 dark:text-zinc-300">All</span> shows everyone. Months are
-                    evenly spaced (0–114 surahs).
-                  </p>
-                  <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/40 sm:p-4">
-                    {projectionChart.rows.length === 0 ? (
-                      <p className="px-1 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                        {projectionScope === "you" && trajectoryYouAvailable === false
-                          ? "We couldn’t find your member profile for this chart — try All."
-                          : "Not enough data for a chart yet."}
-                      </p>
-                    ) : (
-                      <div className="h-[min(50vh,22rem)] min-h-[200px] w-full outline-none [&_.recharts-wrapper]:outline-none">
-                <ResponsiveContainer width="100%" height="100%">
-                          <LineChart
-                            data={projectionChart.rows}
-                            margin={{ top: 12, right: 16, left: 4, bottom: 12 }}
-                            className="outline-none"
-                          >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                            <XAxis
-                              type="number"
-                              dataKey="monthIndex"
-                              domain={[0, Math.max(0, projectionChart.sortedDates.length - 1)]}
-                              ticks={projectionChart.xTicks}
-                              tick={{ fontSize: 11 }}
-                              className="text-zinc-500"
-                              allowDecimals={false}
-                              tickFormatter={(i) => {
-                                const ym = projectionChart.sortedDates[i as number];
-                                return ym ? formatMonthTickFromYm(ym) : "";
-                              }}
-                            />
-                            <YAxis
-                              domain={[0, SURAH_CHART_MAX]}
-                              ticks={SURAH_Y_TICKS}
-                              allowDecimals={false}
-                              width={40}
-                              tick={{ fontSize: 10 }}
-                              className="text-zinc-500"
-                            />
-                    <Tooltip
-                              cursor={false}
-                              formatter={(v) => {
-                                const n = typeof v === "number" ? v : Number(v) || 0;
-                                return [`${n} surah${n === 1 ? "" : "s"}`, ""];
-                              }}
-                              labelFormatter={(label) => {
-                                const ym = projectionChart.sortedDates[Number(label)];
-                                if (!ym) return String(label);
-                                try {
-                                  return new Intl.DateTimeFormat(undefined, {
-                                    month: "long",
-                                    year: "numeric",
-                                    timeZone: "UTC",
-                                  }).format(new Date(`${ym}-01T00:00:00.000Z`));
-                                } catch {
-                                  return ym;
-                                }
-                              }}
-                      contentStyle={{
-                        borderRadius: "0.75rem",
-                        border: "1px solid rgb(228 228 231)",
-                                fontSize: "11px",
-                      }}
+                  <div className="px-5 sm:px-8">
+                    <h2
+                      id="stats-projections-heading"
+                      className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+                    >
+                      Memorisation over time
+                    </h2>
+                  </div>
+                  <div className="mt-4">
+                    <StatsMemorisationOverTimeStrip
+                      chart={fiveMonthChart}
+                      projectionScope="you"
+                      trajectoryYouAvailable={trajectoryYouAvailable}
+                      showEndpointInitials={false}
                     />
-                            {projectionChart.lines.map((ln) => (
-                    <Line
-                                key={ln.dataKey}
-                      type="monotone"
-                                dataKey={ln.dataKey}
-                                name={ln.name}
-                                stroke={ln.stroke}
-                                strokeWidth={projectionScope === "all" ? 1.75 : 2}
-                                dot={projectionScope === "you" ? { r: 3 } : { r: 2 }}
-                                activeDot={false}
-                                connectNulls={false}
-                              />
-                            ))}
-                  </LineChart>
-                </ResponsiveContainer>
-                      </div>
-              )}
-            </div>
+                  </div>
                 </section>
 
                 <section className="min-w-0 pb-4" aria-labelledby="stats-leaderboard-heading">
-                  <h2
-                    id="stats-leaderboard-heading"
-                    className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
-                  >
-                    Leaderboard
-                  </h2>
-                  <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    % of the Quran memorised (whole surahs you’ve logged under Memorising, any order).
-                  </p>
-                  <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/40 sm:p-4">
-              {!progress || progress.leaderboard.length === 0 ? (
-                      <p className="px-1 py-8 text-center text-sm text-zinc-500">No leaderboard data yet.</p>
-              ) : (
-                      <div className="h-[min(50vh,20rem)] min-h-[180px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={progress.leaderboard.map((r) => ({
-                      name: r.display_name.length > 14 ? `${r.display_name.slice(0, 13)}…` : r.display_name,
-                      pct: r.pct_quran,
-                    }))}
-                    margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
-                    barCategoryGap="18%"
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
-                    <XAxis
-                      dataKey="name"
-                      type="category"
-                      tick={{ fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={{ className: "stroke-zinc-200 dark:stroke-zinc-600" }}
-                      interval={0}
-                    />
-                    <YAxis
-                      type="number"
-                      domain={[0, 100]}
-                      ticks={[0, 25, 50, 75, 100]}
-                      tick={{ fontSize: 10 }}
-                      width={36}
-                    />
-                    <Tooltip formatter={(v) => [`${typeof v === "number" ? v : Number(v) || 0}%`, "% Quran"]} />
-                    <Bar
-                      dataKey="pct"
-                      name="% Quran"
-                      fill="#047857"
-                      maxBarSize={22}
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-                      </div>
-              )}
-            </div>
+                  <div className="px-5 sm:px-8">
+                    <h2
+                      id="stats-leaderboard-heading"
+                      className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+                    >
+                      Leaderboard
+                    </h2>
+                  </div>
                   {progress && progress.leaderboard.length > 0 ? (
-                    <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-                      <table className="w-full min-w-[16rem] text-left text-sm">
-                        <thead className="border-b border-zinc-200 bg-zinc-50 text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-400 sm:text-xs">
-                          <tr>
-                            <th scope="col" className="px-4 py-3">
-                              Name
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-right tabular-nums">
-                              % Quran
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                          {progress.leaderboard.map((r) => (
-                            <tr key={r.member_id} className="bg-white dark:bg-zinc-950">
-                              <td className="px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">
-                                {r.display_name}
-                                {r.member_id === memberId ? (
-                                  <span className="ml-1.5 font-normal text-zinc-500 dark:text-zinc-400">(You)</span>
-                                ) : null}
-                              </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                                {r.pct_quran}%
-                              </td>
+                    <div className="mx-auto mt-4 max-w-4xl px-5 sm:px-8">
+                      <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                        <table className="w-full min-w-[16rem] text-left text-sm">
+                          <thead className="border-b border-zinc-200 bg-zinc-50 text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-400 sm:text-xs">
+                            <tr>
+                              <th scope="col" className="px-4 py-3">
+                                Name
+                              </th>
+                              <th scope="col" className="px-4 py-3 text-right tabular-nums">
+                                % Quran
+                              </th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-          </div>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                            {progress.leaderboard.map((r) => (
+                              <tr key={r.member_id} className="bg-white dark:bg-zinc-950">
+                                <td className="px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">
+                                  {r.display_name}
+                                  {r.member_id === memberId ? (
+                                    <span className="ml-1.5 font-normal text-zinc-500 dark:text-zinc-400">(You)</span>
+                                  ) : null}
+                                </td>
+                                <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                                  {r.pct_quran}%
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   ) : null}
                 </section>
-      </div>
+              </div>
             </div>
+          ) : null}
+
+          {panel === "users" && progress?.me?.is_admin ? (
+            <AdminUsersPanel
+              currentMemberId={memberId}
+              onListChanged={() => {
+                void loadMembers();
+                void loadProgress();
+              }}
+            />
           ) : null}
         </div>
         </div>
@@ -1788,6 +1463,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           onLogout={logout}
           closeOnNavigate
           onNavigate={() => setMobileNavOpen(false)}
+          isAdmin={progress?.me?.is_admin ?? false}
         />
       </aside>
 
@@ -1817,17 +1493,17 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
               {clearTrackConfirm === "memorizing" ? (
                 <>
                   This clears your memorising and revising activity on{" "}
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">Current focus</span> (revising only
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">Progress</span> (revising only
                   applies to surahs you’ve memorised) and removes every surah from your memorised list — your{" "}
                   <span className="font-medium text-zinc-700 dark:text-zinc-300">% Quran</span> goes back to{" "}
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">0%</span>. My goals targets stay as they
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">0%</span>. Intention targets stay as they
                   are until you change them.
                 </>
               ) : (
                 <>
                   This removes your active and completed surahs for this track on{" "}
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">Current focus</span>. It does not change
-                  your % Quran or My goals targets.
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">Progress</span>. It does not change
+                  your % Quran or Intention targets.
                 </>
               )}
             </p>

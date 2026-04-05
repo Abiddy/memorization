@@ -83,10 +83,10 @@ export async function POST(request: Request) {
 
   const summary =
     track === "memorizing"
-      ? "Cleared memorising & revising tracks (Current focus) and reset % Quran"
+      ? "Cleared memorising & revising tracks (Progress) and reset % Quran"
       : track === "revising"
-        ? "Cleared revising track (Current focus)"
-        : "Cleared reciting track (Current focus)";
+        ? "Cleared revising track (Progress)"
+        : "Cleared reciting track (Progress)";
 
   await admin.from("progress_events").insert({
     member_id: member.id,

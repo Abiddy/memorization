@@ -146,7 +146,7 @@ export async function POST(request: Request) {
   }
 
   const eventKind = track === "memorizing" ? "memorizing" : track === "revising" ? "revising" : "reciting";
-  const summary = `${formatProgressEventSummary(eventKind, goalIds)} (My goals — Alhamdulillah)`;
+  const summary = `${formatProgressEventSummary(eventKind, goalIds)} (Intention — Alhamdulillah)`;
   const { error: peErr } = await admin.from("progress_events").insert({
     member_id: member.id,
     event_kind: eventKind,

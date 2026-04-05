@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { fetchCircleMemberIds, fetchMemberCircleId } from "@/lib/circle-service";
 
 const UsernameSchema = z
   .string()
@@ -21,12 +22,36 @@ const ONE_YEAR = 60 * 60 * 24 * 365;
 
 export async function GET() {
   const cookieStore = await cookies();
-  if (!cookieStore.get(COOKIE)?.value) {
+  const memberId = cookieStore.get(COOKIE)?.value;
+  if (!memberId) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin.from("members").select("id, display_name").order("display_name", { ascending: true });
+  const circleId = await fetchMemberCircleId(admin, memberId);
+
+  if (!circleId) {
+    const { data: selfOnly, error: selfErr } = await admin
+      .from("members")
+      .select("id, display_name")
+      .eq("id", memberId)
+      .maybeSingle();
+    if (selfErr) {
+      return NextResponse.json({ error: selfErr.message }, { status: 500 });
+    }
+    return NextResponse.json({ members: selfOnly ? [selfOnly] : [] });
+  }
+
+  const ids = await fetchCircleMemberIds(admin, circleId);
+  if (ids.length === 0) {
+    return NextResponse.json({ members: [] });
+  }
+
+  const { data, error } = await admin
+    .from("members")
+    .select("id, display_name")
+    .in("id", ids)
+    .order("display_name", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

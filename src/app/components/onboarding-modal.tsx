@@ -368,7 +368,7 @@ export type AddGoalsModalInitial = {
 } | null;
 
 /**
- * Same surah pickers as onboarding step 2 (“Set your goals”). POSTs to /api/onboarding with current memorised list.
+ * Same surah pickers as onboarding step 2 (“Set intention”). POSTs to /api/onboarding with current memorised list.
  */
 export function AddGoalsModal({
   memorizedSurahIds,
@@ -480,10 +480,10 @@ export function AddGoalsModal({
       >
         <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800 sm:px-5 sm:py-4">
           <h2 id={titleId} className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Set your goals
+            Set intention
           </h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Pick surahs per track and a timeframe for each. This updates My goals and Current focus.
+            Pick surahs per track and a timeframe for each. This updates Intention and Progress.
           </p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
@@ -524,7 +524,7 @@ export function AddGoalsModal({
             onClick={() => void submit()}
             className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-violet-600 dark:hover:bg-violet-500"
           >
-            {submitting ? "Saving…" : "Save goals"}
+            {submitting ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
@@ -616,12 +616,12 @@ function OnboardingWizard({ onDone, idPrefix }: { onDone: () => void; idPrefix: 
             Step {step} of 2
           </p>
           <h2 id={titleId} className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            {step === 1 ? "What have you already memorised?" : "Set your goals"}
+            {step === 1 ? "What have you already memorised?" : "Set intention"}
           </h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             {step === 1
-              ? "Tick every surah you’ve already committed to memory. This updates % Quran, the matrix, Current focus, and projections."
-              : "Pick surahs per track and a timeframe for each. This fills your My goals tab."}
+              ? "Tick every surah you’ve already committed to memory. This updates % Quran, the matrix, Progress, and projections."
+              : "Pick surahs per track and a timeframe for each. This fills your Intention tab."}
           </p>
         </div>
 
@@ -717,7 +717,7 @@ function AddGoalsBarChevron({ expanded }: { expanded: boolean }) {
 }
 
 /**
- * Collapsible “Add Goals” floating bar: same shell for first-login (portal) and My Goals (embedded).
+ * Collapsible “Set Intention” floating bar: same shell for first-login (portal) and Intention (embedded).
  * Rounded `max-w-lg` card above a matching toggle bar — not full viewport width.
  */
 export function AddGoalsBar({
@@ -749,7 +749,7 @@ export function AddGoalsBar({
         aria-expanded={expanded}
         className={toggleBarClass}
       >
-        <span>{expanded ? "Hide" : "Add Goals"}</span>
+        <span>{expanded ? "Hide" : "Set Intention"}</span>
         <AddGoalsBarChevron expanded={expanded} />
       </button>
       <div

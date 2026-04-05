@@ -153,7 +153,7 @@ function GoalTrackCard({
         <div className="flex items-center gap-1.5 sm:gap-2">
           <div
             className="h-2 w-2 shrink-0 rounded-full bg-white shadow-[0_0_0_3px_rgba(255,255,255,0.12)]"
-            title="Goal set"
+            title="Intention set"
           />
           <div className="relative h-1.5 min-w-0 flex-1 rounded-full bg-white/10">
             <div
@@ -261,7 +261,7 @@ function GoalsStatusLog({ entries }: { entries: StatusLogEntry[] }) {
       {entries.length === 0 ? (
         <p className="mt-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
           No activity yet. Updates from the <span className="font-medium text-zinc-600 dark:text-zinc-300">I am…</span> picker and
-          goal completions appear here.
+          intention completions appear here.
         </p>
       ) : (
         <ul className="mt-4">
@@ -352,9 +352,10 @@ export function MyGoalsPanel({
       <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-6 sm:px-8">
           <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            You don’t have active goals yet. Open the <span className="font-medium text-zinc-700 dark:text-zinc-300">Add Goals</span>{" "}
-            bar below, or use the chat picker (<span className="font-medium text-zinc-700 dark:text-zinc-300">I am…</span>) for
-            active tracks.
+            You don’t have an active intention yet. Open <span className="font-medium text-zinc-700 dark:text-zinc-300">Set Intention</span>{" "}
+            below, or use <span className="font-medium text-zinc-700 dark:text-zinc-300">Circles</span> →{" "}
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">Chat</span> (
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">I am…</span>) for active tracks.
           </p>
           <GoalsStatusLog entries={statusLog} />
         </div>
@@ -373,8 +374,9 @@ export function MyGoalsPanel({
       <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-6 sm:px-8">
           <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            No goal surahs on file. Use <span className="font-medium text-zinc-700 dark:text-zinc-300">Add Goals</span> below or
-            finish onboarding. Active tracks (for Focus) still come from the chat bubble.
+            No intention surahs on file. Use <span className="font-medium text-zinc-700 dark:text-zinc-300">Set Intention</span> below or
+            finish onboarding. Active tracks (for Progress) still come from{" "}
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">Circles → Chat</span>.
           </p>
           <GoalsStatusLog entries={statusLog} />
         </div>
@@ -387,7 +389,7 @@ export function MyGoalsPanel({
     sections.push(
       <GoalTrackCard
         key="m"
-        trackLabel="Memorising goal"
+        trackLabel="Memorising intention"
         verb="Memorise"
         entries={goals.memorizing.entries}
         daysLeft={goals.memorizing.daysLeft}
@@ -404,7 +406,7 @@ export function MyGoalsPanel({
     sections.push(
       <GoalTrackCard
         key="r"
-        trackLabel="Revising goal"
+        trackLabel="Revising intention"
         verb="Revise"
         entries={goals.revising.entries}
         daysLeft={goals.revising.daysLeft}
@@ -421,7 +423,7 @@ export function MyGoalsPanel({
     sections.push(
       <GoalTrackCard
         key="c"
-        trackLabel="Reciting goal"
+        trackLabel="Reciting intention"
         verb="Recite"
         entries={goals.reciting.entries}
         daysLeft={goals.reciting.daysLeft}

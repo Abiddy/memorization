@@ -33,9 +33,6 @@ type MatrixTrack = HeatmapActivity;
 
 const SURAH_RANGE = Array.from({ length: 114 }, (_, i) => i + 1);
 
-const SURAH_COL_STICKY =
-  "w-[min(42vw,9.5rem)] min-w-[6.75rem] max-w-[9.5rem] sm:w-[8.5rem] sm:min-w-[8.5rem] sm:max-w-[10rem]";
-
 function countSurahsForActivity(row: HeatmapRow | undefined, activity: HeatmapActivity): number {
   if (!row?.surahs) return 0;
   let c = 0;
@@ -409,6 +406,7 @@ function MemberSurahBadge({
   onToggle: () => void;
 }) {
   const sel = MATRIX_TRACK_UI[selectionTrack];
+  const trackNamesText = activities.map((a) => TRACK_TITLE[a]).join(" · ");
   const iconRow = (
     <span className="flex shrink-0 flex-row items-center -space-x-1" aria-hidden>
       {activities.map((a) => (
@@ -423,14 +421,16 @@ function MemberSurahBadge({
     </span>
   );
   const label = (
-    <span className="min-w-0 text-left text-[10px] font-medium leading-snug text-zinc-800 [overflow-wrap:anywhere] sm:text-[11px] dark:text-zinc-200">
-      {displayName}
-      {isYou ? <span className="font-normal text-zinc-500 dark:text-zinc-400"> (You)</span> : null}
+    <span className="min-w-0 text-left text-xs font-medium leading-snug text-zinc-800 [overflow-wrap:anywhere] dark:text-zinc-200">
+      {isYou ? trackNamesText : displayName}
     </span>
   );
+  const a11yActionLabel = isYou
+    ? `Your ${trackNamesText} on this surah — tap to select for Save or Remove`
+    : `${displayName} on this surah — tap to select for Save or Remove`;
 
   const base =
-    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border px-2 py-1 sm:gap-2 sm:px-2.5 sm:py-1.5";
+    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-1.5";
 
   if (interactive) {
     return (
@@ -438,7 +438,7 @@ function MemberSurahBadge({
         type="button"
         onClick={onToggle}
         aria-pressed={selected}
-        aria-label={`${displayName} on this surah — tap to select for Save or Remove`}
+        aria-label={a11yActionLabel}
         className={`${base} text-left outline-none transition hover:opacity-95 ${
           selected
             ? `${sel.cellSelectedFilled} ring-2 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950`
@@ -454,7 +454,7 @@ function MemberSurahBadge({
   return (
     <div
       className={`${base} border-zinc-200/80 bg-zinc-50/90 dark:border-zinc-700/70 dark:bg-zinc-900/85`}
-      title={`${displayName} · ${activities.map((a) => TRACK_TITLE[a]).join(" · ")}`}
+      title={isYou ? trackNamesText : `${displayName} · ${trackNamesText}`}
     >
       {iconRow}
       {label}
@@ -659,41 +659,25 @@ export function SurahHeatmapPanel({
       : null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-zinc-950 sm:gap-4 sm:p-2 lg:flex-row lg:gap-6 lg:p-6">
+    <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-zinc-950 sm:gap-4 sm:p-2 lg:flex-row lg:gap-6 lg:p-6">
       {floatingEditor}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-950">
-        <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-x-contain">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain">
           {empty ? (
             <p className="p-4 text-xs text-zinc-500 sm:p-6 sm:text-sm">No members yet.</p>
           ) : (
-            <table className="w-full border-separate border-spacing-y-2 border-spacing-x-0 sm:border-spacing-y-2.5">
-              <thead>
-                <tr>
-                  <th
-                    scope="col"
-                    className={`sticky left-0 top-0 z-50 ${SURAH_COL_STICKY} bg-white py-2 pl-3 pr-1 align-bottom sm:pl-4 dark:bg-zinc-950`}
-                  >
-                    <div className="flex items-center gap-1 sm:gap-1.5">
-                      <span className="min-w-0 flex-1 text-left text-[9px] font-semibold uppercase tracking-wide text-zinc-400 sm:text-[10px] dark:text-zinc-500">
-                        Surah
-                      </span>
-                      <SurahOrderToggle
-                        surahOrderDesc={surahOrderDesc}
-                        onToggle={() => setSurahOrderDesc((d) => !d)}
-                      />
-                    </div>
-                  </th>
-                  <th
-                    scope="col"
-                    className="sticky top-0 z-40 min-w-0 bg-white py-2 pl-2 pr-3 text-left align-bottom sm:pl-3 sm:pr-4 dark:bg-zinc-950"
-                  >
-                    <span className="text-[9px] font-semibold uppercase tracking-wide text-zinc-400 sm:text-[10px] dark:text-zinc-500">
-                      Name
-                    </span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200/60 dark:divide-zinc-800/70">
+            <>
+              <div className="sticky top-0 z-40 flex items-center justify-between gap-2 border-b border-zinc-200/80 bg-white/95 px-3 py-2.5 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/95 sm:px-4">
+                <span className="text-[9px] font-semibold uppercase tracking-wide text-zinc-400 sm:text-[10px] dark:text-zinc-500">
+                  Surah
+                </span>
+                <SurahOrderToggle
+                  surahOrderDesc={surahOrderDesc}
+                  onToggle={() => setSurahOrderDesc((d) => !d)}
+                  size="md"
+                />
+              </div>
+              <div className="w-full space-y-3 px-3 py-3 sm:space-y-3.5 sm:px-4 sm:py-4">
                 {surahOrderList.map((n) => {
                   const title = `${n}. ${surahName(n)}`;
                   const here = membersActiveOnSurah(orderedRows, n, currentMemberId);
@@ -704,17 +688,22 @@ export function SurahHeatmapPanel({
                   const emptySelected = canPick && !youHere && selectedSurahs.has(n);
 
                   return (
-                    <tr key={n} className="group">
-                      <th
-                        scope="row"
-                        className={`sticky left-0 z-30 ${SURAH_COL_STICKY} whitespace-normal break-words bg-zinc-50/95 py-2.5 pl-3 pr-1 text-left text-[10px] font-medium leading-snug text-zinc-900 sm:py-3 sm:pl-4 sm:text-xs dark:bg-zinc-900/95 dark:text-zinc-100`}
-                        title={title}
-                      >
-                        <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{n}.</span>{" "}
-                        {surahName(n)}
-                      </th>
-                      <td className="min-w-0 py-2 pl-2 pr-3 align-middle sm:py-2.5 sm:pl-3 sm:pr-4">
-                        <div className="flex flex-wrap items-center gap-2">
+                    <section
+                      key={n}
+                      aria-labelledby={`surah-matrix-${n}-label`}
+                      className="w-full"
+                    >
+                      <div className="mb-1 flex justify-end pr-0.5">
+                        <h3
+                          id={`surah-matrix-${n}-label`}
+                          className="max-w-[85%] text-right text-[10px] font-medium leading-snug text-zinc-500 sm:text-[11px] dark:text-zinc-400"
+                        >
+                          <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{n}.</span>{" "}
+                          {surahName(n)}
+                        </h3>
+                      </div>
+                      <div className="w-full rounded-xl border border-zinc-200/90 bg-zinc-50/95 px-3 py-2.5 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/90 sm:px-3.5 sm:py-3">
+                        <div className="flex min-h-[2.25rem] flex-wrap items-center gap-2">
                           {here.map(({ row, activities }) => {
                             const isYou = currentMemberId != null && row.member_id === currentMemberId;
                             return (
@@ -750,12 +739,12 @@ export function SurahHeatmapPanel({
                             <span className="text-xs text-zinc-400 dark:text-zinc-600">—</span>
                           ) : null}
                         </div>
-                      </td>
-                    </tr>
+                      </div>
+                    </section>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -816,11 +805,11 @@ export function SurahHeatmapPanel({
 
         {readOnly ? (
           <p className="mt-6 text-[11px] leading-relaxed text-amber-800 dark:text-amber-400/90">
-            View only — update tracks from the chat picker (I am…) or My goals.
+            View only — update tracks from Circles → Chat (I am…) or Intention.
           </p>
         ) : null}
         <p className="mt-10 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-          Each row is a surah. Name badges show who is active; coloured circles are memorising, revising, and reciting.
+          Each card is a surah. Badges list members on that surah (full names); circles show memorising, revising, or reciting.
         </p>
       </aside>
     </div>

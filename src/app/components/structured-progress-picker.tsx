@@ -11,7 +11,7 @@ export function StructuredProgressPicker({
   onPosted,
   onError,
 }: {
-  /** Same baseline as My goals: surahs already counted as memorised (% Quran). */
+  /** Same baseline as Intention: surahs already counted as memorised (% Quran). */
   memorizedSurahIds: number[];
   onPosted: () => void;
   onError: (msg: string) => void;

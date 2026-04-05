@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchMemberCircleId } from "@/lib/circle-service";
 import { formatProgressChatLine, formatProgressEventSummary } from "@/lib/quran";
 
 const COOKIE = "alif_member_id";
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
     if (notYet.length > 0) {
       return NextResponse.json(
         {
-          error: "Revising only includes surahs you’ve already memorised (same rule as My goals).",
+          error: "Revising only includes surahs you’ve already memorised (same rule as Intention).",
         },
         { status: 400 }
       );
@@ -145,14 +146,16 @@ export async function POST(request: Request) {
     nextRow.reciting_surahs = uniqueSurahs;
   }
 
+  const circleId = await fetchMemberCircleId(admin, memberId);
   const { data: msg, error: msgError } = await admin
     .from("messages")
     .insert({
       member_id: member.id,
       display_name: member.display_name,
       body,
+      ...(circleId ? { circle_id: circleId } : {}),
     })
-    .select("id, member_id, display_name, body, created_at")
+    .select("id, member_id, display_name, body, created_at, circle_id")
     .single();
 
   if (msgError || !msg) {
@@ -198,12 +201,12 @@ export async function POST(request: Request) {
   return NextResponse.json({ message: msg });
 }
 
-/** Surah matrix is display-only; updates go through chat (“I am…”) or My goals. */
+/** Surah matrix is display-only; updates go through chat (“I am…”) or Intention. */
 export async function PATCH() {
   return NextResponse.json(
     {
       error:
-        "The Surah matrix is view-only. Update your tracks from the chat picker (I am…) or complete goals on My goals.",
+        "The Surah matrix is view-only. Update your tracks from Circles → Chat (I am…) or under Intention.",
     },
     { status: 403 }
   );
