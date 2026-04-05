@@ -18,6 +18,7 @@ import { StatsMemorisationOverTimeStrip } from "@/app/components/stats-robinhood
 import {
   AddGoalsModal,
   type AddGoalsModalInitial,
+  type SetIntentionTrackFocus,
   OnboardingModal,
 } from "@/app/components/onboarding-modal";
 import type { MemberTrajectory } from "@/lib/progress-aggregate";
@@ -747,6 +748,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
   const inviteCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [addGoalsOpen, setAddGoalsOpen] = useState(false);
   const [addGoalsKey, setAddGoalsKey] = useState(0);
+  const [addGoalsFocusTrack, setAddGoalsFocusTrack] = useState<SetIntentionTrackFocus | null>(null);
   const [clearTracksMenuOpen, setClearTracksMenuOpen] = useState(false);
   const [clearTrackConfirm, setClearTrackConfirm] = useState<ClearFocusTrack | null>(null);
   const [clearTrackBusy, setClearTrackBusy] = useState(false);
@@ -949,16 +951,6 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     return progress.memberTrajectories.some((t) => t.member_id === memberId);
   }, [memberId, progress?.memberTrajectories]);
 
-  const addNewGoalsFullyBlocked = useMemo(() => {
-    const g = progress?.me?.goals;
-    if (!g) return false;
-    return (
-      g.memorizing.entries.length > 0 &&
-      g.revising.entries.length > 0 &&
-      g.reciting.entries.length > 0
-    );
-  }, [progress?.me?.goals]);
-
   useEffect(() => {
     if (!clearTracksMenuOpen) return;
     function onDoc(e: MouseEvent) {
@@ -1081,8 +1073,14 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   </span>
                 </button>
                 <div className="flex min-w-0 items-center gap-2 text-base font-semibold text-zinc-800 dark:text-zinc-200 sm:gap-2.5 sm:text-lg">
-                  <span className="truncate">{panelTitle(panel)}</span>
-                  {panel === "heatmap" ? <SurahMatrixHelpButton /> : null}
+                  {panel === "goals" ? (
+                    <span className="sr-only">{panelTitle(panel)}</span>
+                  ) : (
+                    <>
+                      <span className="truncate">{panelTitle(panel)}</span>
+                      {panel === "heatmap" ? <SurahMatrixHelpButton /> : null}
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -1108,22 +1106,6 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             <div className="w-8 shrink-0 sm:w-10" aria-hidden />
           ) : panel === "goals" ? (
             <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                disabled={addNewGoalsFullyBlocked}
-                title={
-                  addNewGoalsFullyBlocked
-                    ? "Complete your intention on this track before setting a new one."
-                    : undefined
-                }
-                onClick={() => {
-                  setAddGoalsKey((k) => k + 1);
-                  setAddGoalsOpen(true);
-                }}
-                className="rounded-full border border-zinc-300 bg-zinc-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45 dark:border-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:opacity-40"
-              >
-                Set Intention
-              </button>
               <div ref={clearTracksRootRef} className="relative">
                 <button
                   type="button"
@@ -1244,10 +1226,12 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
               <MyGoalsPanel
                 goals={progress?.me?.goals ?? null}
                 statusLog={progress?.me?.statusLog ?? []}
-                resumeWelcomeSetup={Boolean(
-                  progress?.me && !progress.me.needsOnboarding && progress.me.goals == null
-                )}
-                onWelcomeDone={() => void loadProgress()}
+                memorizedSurahCount={(progress?.me?.memorized_surah_ids ?? []).length}
+                onSetIntentionForTrack={(track) => {
+                  setAddGoalsFocusTrack(track);
+                  setAddGoalsKey((k) => k + 1);
+                  setAddGoalsOpen(true);
+                }}
                 onGoalsUpdated={() => void loadProgress()}
               />
             </div>
@@ -1544,9 +1528,14 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           key={addGoalsKey}
           memorizedSurahIds={progress.me.memorized_surah_ids}
           initialGoals={addGoalsModalInitialFromPayload(progress.me.goals)}
-          onClose={() => setAddGoalsOpen(false)}
+          focusTrack={addGoalsFocusTrack}
+          onClose={() => {
+            setAddGoalsOpen(false);
+            setAddGoalsFocusTrack(null);
+          }}
           onSaved={() => {
             setAddGoalsOpen(false);
+            setAddGoalsFocusTrack(null);
             void loadProgress();
           }}
         />

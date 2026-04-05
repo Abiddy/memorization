@@ -121,7 +121,7 @@ export async function POST(request: Request) {
   let eventKind: "memorizing" | "revising" | "reciting";
   let surahSummary: string;
   let summary: string;
-  let nextRow: MemberProgressRow = { ...base };
+  const nextRow: MemberProgressRow = { ...base };
 
   const juzForChat = parsed.data.active_juz;
   const uniqueSurahs = [...ids].sort((a, b) => a - b);

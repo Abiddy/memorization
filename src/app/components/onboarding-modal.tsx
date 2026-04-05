@@ -286,6 +286,8 @@ function inferGoalTimeSpan(targetEndYmd: string): GoalTimeSpan {
   return "2m";
 }
 
+export type SetIntentionTrackFocus = "memorizing" | "revising" | "reciting";
+
 function SetGoalsStep2Pickers({
   idPrefix,
   already,
@@ -301,6 +303,7 @@ function SetGoalsStep2Pickers({
   setSpanMem,
   setSpanRev,
   setSpanRec,
+  onlyTrack = null,
 }: {
   idPrefix: string;
   already: Set<number>;
@@ -316,47 +319,58 @@ function SetGoalsStep2Pickers({
   setSpanMem: (v: GoalTimeSpan) => void;
   setSpanRev: (v: GoalTimeSpan) => void;
   setSpanRec: (v: GoalTimeSpan) => void;
+  onlyTrack?: SetIntentionTrackFocus | null;
 }) {
   const allRows = useMemo(() => buildAllSurahRows(), []);
   const optionsMemorize = useMemo(() => allRows.filter((r) => !already.has(r.id)), [allRows, already]);
   const optionsRevise = useMemo(() => allRows.filter((r) => already.has(r.id)), [allRows, already]);
 
+  const showMem = !onlyTrack || onlyTrack === "memorizing";
+  const showRev = !onlyTrack || onlyTrack === "revising";
+  const showRec = !onlyTrack || onlyTrack === "reciting";
+
   return (
     <div className="space-y-4">
-      <GoalMultiSelect
-        label="I will memorise"
-        hint="Surahs you haven't memorised yet"
-        icon={<IconTrackMemorising className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
-        options={optionsMemorize}
-        selected={goalMem}
-        onToggle={onToggleMem}
-        timeSpan={spanMem}
-        onTimeSpanChange={setSpanMem}
-        timeframeSelectId={`${idPrefix}-span-mem`}
-      />
-      <GoalMultiSelect
-        label="I will revise"
-        hint={already.size === 0 ? "Mark surahs as memorised first (onboarding or matrix)." : "Only surahs you’ve already memorised."}
-        icon={<IconTrackRevising className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
-        options={optionsRevise}
-        selected={goalRev}
-        onToggle={onToggleRev}
-        emptyMessage="No memorised surahs yet — add them elsewhere first to choose revision targets."
-        timeSpan={spanRev}
-        onTimeSpanChange={setSpanRev}
-        timeframeSelectId={`${idPrefix}-span-rev`}
-      />
-      <GoalMultiSelect
-        label="I will recite"
-        hint="Any surahs you want to recite during this period."
-        icon={<IconTrackReciting className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
-        options={allRows}
-        selected={goalRec}
-        onToggle={onToggleRec}
-        timeSpan={spanRec}
-        onTimeSpanChange={setSpanRec}
-        timeframeSelectId={`${idPrefix}-span-rec`}
-      />
+      {showMem ? (
+        <GoalMultiSelect
+          label="I will memorise"
+          hint="Surahs you haven't memorised yet"
+          icon={<IconTrackMemorising className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
+          options={optionsMemorize}
+          selected={goalMem}
+          onToggle={onToggleMem}
+          timeSpan={spanMem}
+          onTimeSpanChange={setSpanMem}
+          timeframeSelectId={`${idPrefix}-span-mem`}
+        />
+      ) : null}
+      {showRev ? (
+        <GoalMultiSelect
+          label="I will revise"
+          hint={already.size === 0 ? "Mark surahs as memorised first (onboarding or matrix)." : "Only surahs you’ve already memorised."}
+          icon={<IconTrackRevising className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
+          options={optionsRevise}
+          selected={goalRev}
+          onToggle={onToggleRev}
+          emptyMessage="No memorised surahs yet — add them elsewhere first to choose revision targets."
+          timeSpan={spanRev}
+          onTimeSpanChange={setSpanRev}
+          timeframeSelectId={`${idPrefix}-span-rev`}
+        />
+      ) : null}
+      {showRec ? (
+        <GoalMultiSelect
+          label="I will recite"
+          hint="Any surahs you want to recite during this period."
+          icon={<IconTrackReciting className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
+          options={allRows}
+          selected={goalRec}
+          onToggle={onToggleRec}
+          timeSpan={spanRec}
+          onTimeSpanChange={setSpanRec}
+          timeframeSelectId={`${idPrefix}-span-rec`}
+        />
+      ) : null}
     </div>
   );
 }
@@ -367,17 +381,38 @@ export type AddGoalsModalInitial = {
   reciting: { surahIds: number[]; targetEnd: string };
 } | null;
 
+const FOCUS_MODAL_COPY: Record<
+  SetIntentionTrackFocus,
+  { title: string; description: string }
+> = {
+  memorizing: {
+    title: "Set memorisation intention",
+    description: "Pick surahs and a timeframe. Your other intention tracks stay as they are.",
+  },
+  revising: {
+    title: "Set revision intention",
+    description: "Pick surahs and a timeframe. Your other intention tracks stay as they are.",
+  },
+  reciting: {
+    title: "Set recitation intention",
+    description: "Pick surahs and a timeframe. Your other intention tracks stay as they are.",
+  },
+};
+
 /**
  * Same surah pickers as onboarding step 2 (“Set intention”). POSTs to /api/onboarding with current memorised list.
  */
 export function AddGoalsModal({
   memorizedSurahIds,
   initialGoals,
+  focusTrack = null,
   onClose,
   onSaved,
 }: {
   memorizedSurahIds: number[];
   initialGoals: AddGoalsModalInitial;
+  /** When set, only that track’s picker is shown (used from Intention tab cards). */
+  focusTrack?: SetIntentionTrackFocus | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -461,6 +496,7 @@ export function AddGoalsModal({
   }
 
   const titleId = "add-goals-modal-title";
+  const headerCopy = focusTrack ? FOCUS_MODAL_COPY[focusTrack] : null;
 
   const node = (
     <div className="pointer-events-auto fixed inset-0 z-[210] flex items-end justify-center p-3 sm:items-center sm:p-6">
@@ -480,10 +516,11 @@ export function AddGoalsModal({
       >
         <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800 sm:px-5 sm:py-4">
           <h2 id={titleId} className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Set intention
+            {headerCopy?.title ?? "Set intention"}
           </h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Pick surahs per track and a timeframe for each. This updates Intention and Progress.
+            {headerCopy?.description ??
+              "Pick surahs per track and a timeframe for each. This updates Intention and Progress."}
           </p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
@@ -502,6 +539,7 @@ export function AddGoalsModal({
             setSpanMem={setSpanMem}
             setSpanRev={setSpanRev}
             setSpanRec={setSpanRec}
+            onlyTrack={focusTrack}
           />
           {error ? (
             <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
