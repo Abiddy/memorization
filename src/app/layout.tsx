@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Alif Laam Meem — Memorisation club",
-  description: "Your suhbah — Quran memorisation progress and chat for your circle.",
+  title: "Hfz.app — Track your Quran Journey",
+  description:
+    "Personal Quran memorisation tracker: intentions, progress, stats, and optional circles with friends.",
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     shortcut: "/icon.svg",

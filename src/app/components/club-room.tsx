@@ -248,8 +248,8 @@ function ClubBrandTitle() {
         priority
         aria-hidden
       />
-      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 sm:text-[13px]">
-        Alif Laam Meem
+      <p className="text-xs font-semibold tracking-wide text-zinc-500 dark:text-zinc-400 sm:text-[13px]">
+        Hfz.app
       </p>
     </div>
   );

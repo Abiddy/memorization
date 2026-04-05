@@ -78,10 +78,10 @@ export function LoginForm() {
         disabled={pending}
         className="rounded-xl bg-emerald-700 px-4 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500"
       >
-        {pending ? "Signing in…" : "Enter the club"}
+        {pending ? "Signing in…" : "Sign in"}
       </button>
       <p className="text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-        Enter a username and password to create your account. Already a member? Use the same credentials to
+        New here? Pick a username and password to create your account. Returning? Use the same credentials to
         sign in.
       </p>
     </form>
