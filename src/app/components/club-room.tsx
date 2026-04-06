@@ -971,15 +971,15 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
     setClearTrackError(null);
     try {
       const res = await fetch("/api/member-progress/clear-track", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ track: clearTrackConfirm }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
+    if (!res.ok) {
         setClearTrackError(data.error ?? "Could not clear track.");
-        return;
-      }
+      return;
+    }
       setClearTrackConfirm(null);
       await loadProgress();
     } finally {
@@ -1031,8 +1031,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
             {circleHub ? (
               <>
-                <button
-                  type="button"
+        <button
+          type="button"
                   onClick={() => setCircleHub(null)}
                   className="shrink-0 rounded-lg p-2 text-zinc-600 outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950"
                   aria-label="Back to Circles"
@@ -1048,15 +1048,15 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                   >
                     <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                </button>
+        </button>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100 sm:text-lg">
                     {circleHub.name}
                   </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     {circleHub.member_count} member{circleHub.member_count === 1 ? "" : "s"}
-                  </p>
-                </div>
+            </p>
+          </div>
               </>
             ) : (
               <>
@@ -1087,7 +1087,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
           </div>
           {panel === "heatmap" ? (
             <div className="flex min-w-0 max-w-[min(52vw,13.5rem)] shrink-0 items-center justify-end pl-1 sm:max-w-none sm:pl-2">
-              <MatrixTrackLegend className="text-right leading-tight" />
+              <MatrixTrackLegend className="text-right leading-tight" variant="memorization" />
             </div>
           ) : panel === "stats" || panel === "focus" ? (
             <div className="w-8 shrink-0 sm:w-10" aria-hidden />
@@ -1168,7 +1168,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                     </li>
                   </ul>
                 ) : null}
-              </div>
+                  </div>
             </div>
           ) : (
             <GroupMemberStack
@@ -1177,8 +1177,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
               onCopyGroupLink={copyInviteLink}
               inviteCopied={inviteCopied}
             />
-          )}
-        </div>
+            )}
+          </div>
       </header>
 
       <div className="flex min-h-0 min-w-0 flex-1">
@@ -1219,7 +1219,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 />
               )}
             </div>
-          ) : null}
+            ) : null}
 
           {panel === "goals" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-950">
@@ -1235,7 +1235,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 onGoalsUpdated={() => void loadProgress()}
               />
             </div>
-          ) : null}
+            ) : null}
 
           {panel === "focus" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-950">
@@ -1332,6 +1332,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                 currentMemberId={memberId}
                 myPctQuran={progress?.dashboard.find((r) => r.member_id === memberId)?.pct_quran ?? null}
                 readOnly
+                personalMemorizationOnly
+                memorizedSurahIds={progress?.me?.memorized_surah_ids ?? []}
               />
             </div>
           ) : null}
@@ -1347,7 +1349,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                     >
                       Memorisation over time
                     </h2>
-                  </div>
+            </div>
                   <div className="mt-4">
                     <StatsMemorisationOverTimeStrip
                       chart={fiveMonthChart}
@@ -1356,7 +1358,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                       showEndpointInitials={false}
                     />
                   </div>
-                </section>
+        </section>
 
                 <section className="min-w-0 pb-4" aria-labelledby="stats-leaderboard-heading">
                   <div className="px-5 sm:px-8">
@@ -1379,8 +1381,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                               <th scope="col" className="px-4 py-3 text-right tabular-nums">
                                 % Quran
                               </th>
-                            </tr>
-                          </thead>
+                  </tr>
+                </thead>
                           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                             {progress.leaderboard.map((r) => (
                               <tr key={r.member_id} className="bg-white dark:bg-zinc-950">
@@ -1389,16 +1391,16 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
                                   {r.member_id === memberId ? (
                                     <span className="ml-1.5 font-normal text-zinc-500 dark:text-zinc-400">(You)</span>
                                   ) : null}
-                                </td>
+                      </td>
                                 <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
                                   {r.pct_quran}%
-                                </td>
-                              </tr>
+                        </td>
+                      </tr>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
+                </tbody>
+              </table>
+            </div>
+          </div>
                   ) : null}
                 </section>
               </div>
@@ -1415,8 +1417,8 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
             />
           ) : null}
         </div>
-        </div>
-      </div>
+            </div>
+          </div>
 
       {/* Mobile nav drawer + backdrop (lg+ uses persistent sidebar only) */}
       <button
@@ -1515,7 +1517,7 @@ export function ClubRoom({ memberId, initialDisplayName }: { memberId: string; i
               </button>
             </div>
           </div>
-        </div>
+      </div>
       ) : null}
 
       <OnboardingModal

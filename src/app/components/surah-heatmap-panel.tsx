@@ -328,7 +328,33 @@ const TRACK_TITLE: Record<HeatmapActivity, string> = {
 };
 
 /** Track icon key — shared by club toolbar (heatmap) and help copy. */
-export function MatrixTrackLegend({ className = "" }: { className?: string }) {
+export function MatrixTrackLegend({
+  className = "",
+  variant = "tracks",
+}: {
+  className?: string;
+  /** `memorization` — personal matrix: memorised vs in-progress only. */
+  variant?: "tracks" | "memorization";
+}) {
+  if (variant === "memorization") {
+    return (
+      <p
+        className={`flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[10px] leading-tight text-zinc-600 dark:text-zinc-400 sm:text-xs ${className}`}
+      >
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-emerald-600" aria-hidden />
+          <span>Memorised</span>
+        </span>
+        <span className="text-zinc-400 dark:text-zinc-600" aria-hidden>
+          ·
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <IconTrackMemorising className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <span>In progress</span>
+        </span>
+      </p>
+    );
+  }
   return (
     <p className={`flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs leading-snug text-zinc-600 dark:text-zinc-400 sm:text-sm ${className}`}>
       <span className="inline-flex items-center gap-1">
@@ -462,6 +488,73 @@ function MemberSurahBadge({
   );
 }
 
+function IconCheckWhite({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M20 6L9 17l-5-5"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Personal Surah matrix: memorised (green + check) vs memorising (border + in progress) vs not started (—). Revising/reciting are not shown. */
+function PersonalMemorizationCell({
+  memorized,
+  memorizing,
+  surahLabel,
+}: {
+  memorized: boolean;
+  memorizing: boolean;
+  /** e.g. `1. Al-Fātiḥah` — shown inside the box on the left. */
+  surahLabel: string;
+}) {
+  const nameClass =
+    "min-w-0 flex-1 text-left text-sm font-semibold leading-snug [overflow-wrap:anywhere] sm:text-[15px]";
+
+  if (memorized) {
+    return (
+      <div className="flex min-h-[2.25rem] w-full items-center justify-between gap-3">
+        <span className={`${nameClass} text-white`}>{surahLabel}</span>
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20"
+          aria-hidden
+        >
+          <IconCheckWhite className="text-white" />
+        </span>
+      </div>
+    );
+  }
+  if (memorizing) {
+    return (
+      <div className="flex min-h-[2.25rem] w-full items-center justify-between gap-3">
+        <span className={`${nameClass} text-zinc-800 dark:text-zinc-100`}>{surahLabel}</span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-xs font-medium text-emerald-800 dark:text-emerald-200">In progress</span>
+          <IconTrackMemorising className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex min-h-[2.25rem] w-full items-center justify-between gap-3">
+      <span className={`${nameClass} font-medium text-zinc-700 dark:text-zinc-300`}>{surahLabel}</span>
+      <span className="shrink-0 text-sm text-zinc-400 dark:text-zinc-600">—</span>
+    </div>
+  );
+}
+
 /** Selection highlight + floating bar accents for the active matrix track (default: memorising → green). */
 const MATRIX_TRACK_UI: Record<
   MatrixTrack,
@@ -528,6 +621,8 @@ export function SurahHeatmapPanel({
   onSaved,
   myPctQuran,
   readOnly = false,
+  personalMemorizationOnly = false,
+  memorizedSurahIds,
 }: {
   heatmap: HeatmapPayload | null | undefined;
   currentMemberId: string | null | undefined;
@@ -536,8 +631,20 @@ export function SurahHeatmapPanel({
   myPctQuran?: number | null;
   /** When true, matrix is display-only (no selection / save). */
   readOnly?: boolean;
+  /**
+   * Your matrix only: memorised (% Quran) = green + check; active memorisation track = bordered “In progress”.
+   * Revising/reciting are not shown in cells.
+   */
+  personalMemorizationOnly?: boolean;
+  /** Required for `personalMemorizationOnly` — surahs counted as fully memorised. */
+  memorizedSurahIds?: number[];
 }) {
   const rows = heatmap?.rows ?? [];
+
+  const memorizedSet = useMemo(
+    () => new Set((memorizedSurahIds ?? []).filter((n) => n >= 1 && n <= 114)),
+    [memorizedSurahIds]
+  );
 
   /** Current user first; everyone else keeps API order (name-sorted). */
   const orderedRows = useMemo(() => {
@@ -563,7 +670,7 @@ export function SurahHeatmapPanel({
     setPortalReady(true);
   }, []);
 
-  const empty = rows.length === 0;
+  const empty = rows.length === 0 && !(personalMemorizationOnly && currentMemberId);
   const showFloatingBar = Boolean(currentMemberId && selectedSurahs.size > 0);
 
   const clearSelection = useCallback(() => {
@@ -687,58 +794,83 @@ export function SurahHeatmapPanel({
                   const selUi = MATRIX_TRACK_UI[matrixTrack];
                   const emptySelected = canPick && !youHere && selectedSurahs.has(n);
 
+                  const personalCell =
+                    personalMemorizationOnly && currentMemberId != null;
+                  const memorized = memorizedSet.has(n);
+                  const memorizing = !memorized && Boolean(myRow?.surahs[n]?.includes("memorizing"));
+
+                  const boxClass = personalCell
+                    ? memorized
+                      ? "w-full rounded-xl border border-emerald-700/25 bg-emerald-600 px-3 py-2.5 shadow-sm dark:border-emerald-500/35 dark:bg-emerald-600 sm:px-3.5 sm:py-3"
+                      : memorizing
+                        ? "w-full rounded-xl border-2 border-emerald-300 bg-white px-3 py-2.5 shadow-sm dark:border-emerald-500/55 dark:bg-zinc-900 sm:px-3.5 sm:py-3"
+                        : "w-full rounded-xl border border-zinc-200/90 bg-zinc-50/95 px-3 py-2.5 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/90 sm:px-3.5 sm:py-3"
+                    : "w-full rounded-xl border border-zinc-200/90 bg-zinc-50/95 px-3 py-2.5 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/90 sm:px-3.5 sm:py-3";
+
                   return (
                     <section
                       key={n}
-                      aria-labelledby={`surah-matrix-${n}-label`}
                       className="w-full"
+                      {...(personalCell
+                        ? { "aria-label": title }
+                        : { "aria-labelledby": `surah-matrix-${n}-label` })}
                     >
-                      <div className="mb-1 flex justify-end pr-0.5">
-                        <h3
-                          id={`surah-matrix-${n}-label`}
-                          className="max-w-[85%] text-right text-[10px] font-medium leading-snug text-zinc-500 sm:text-[11px] dark:text-zinc-400"
-                        >
-                          <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{n}.</span>{" "}
-                          {surahName(n)}
-                        </h3>
-                      </div>
-                      <div className="w-full rounded-xl border border-zinc-200/90 bg-zinc-50/95 px-3 py-2.5 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/90 sm:px-3.5 sm:py-3">
-                        <div className="flex min-h-[2.25rem] flex-wrap items-center gap-2">
-                          {here.map(({ row, activities }) => {
-                            const isYou = currentMemberId != null && row.member_id === currentMemberId;
-                            return (
-                              <MemberSurahBadge
-                                key={row.member_id}
-                                displayName={row.display_name}
-                                isYou={isYou}
-                                activities={activities}
-                                interactive={isYou && !readOnly}
-                                selected={isYou && !readOnly && selectedSurahs.has(n)}
-                                selectionTrack={matrixTrack}
-                                onToggle={() => toggleSurah(n)}
-                              />
-                            );
-                          })}
-                          {canPick && !youHere ? (
-                            <button
-                              type="button"
-                              title={title}
-                              aria-label={`Select ${title} for your tracks`}
-                              aria-pressed={emptySelected}
-                              onClick={() => toggleSurah(n)}
-                              className={`inline-flex size-8 shrink-0 items-center justify-center rounded-md text-sm font-semibold outline-none ring-2 ring-transparent transition hover:opacity-90 sm:size-9 ${selUi.focusRing} focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950 ${
-                                emptySelected
-                                  ? selUi.cellSelectedEmpty
-                                  : "bg-zinc-100/90 text-zinc-400 ring-zinc-200/80 dark:bg-zinc-800/50 dark:text-zinc-500 dark:ring-zinc-700/60"
-                              }`}
-                            >
-                              +
-                            </button>
-                          ) : null}
-                          {here.length === 0 && !canPick ? (
-                            <span className="text-xs text-zinc-400 dark:text-zinc-600">—</span>
-                          ) : null}
+                      {!personalCell ? (
+                        <div className="mb-1 flex justify-end pr-0.5">
+                          <h3
+                            id={`surah-matrix-${n}-label`}
+                            className="max-w-[85%] text-right text-[10px] font-medium leading-snug text-zinc-500 sm:text-[11px] dark:text-zinc-400"
+                          >
+                            <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{n}.</span>{" "}
+                            {surahName(n)}
+                          </h3>
                         </div>
+                      ) : null}
+                      <div className={boxClass}>
+                        {personalCell ? (
+                          <PersonalMemorizationCell
+                            memorized={memorized}
+                            memorizing={memorizing}
+                            surahLabel={title}
+                          />
+                        ) : (
+                          <div className="flex min-h-[2.25rem] flex-wrap items-center gap-2">
+                            {here.map(({ row, activities }) => {
+                              const isYou = currentMemberId != null && row.member_id === currentMemberId;
+                              return (
+                                <MemberSurahBadge
+                                  key={row.member_id}
+                                  displayName={row.display_name}
+                                  isYou={isYou}
+                                  activities={activities}
+                                  interactive={isYou && !readOnly}
+                                  selected={isYou && !readOnly && selectedSurahs.has(n)}
+                                  selectionTrack={matrixTrack}
+                                  onToggle={() => toggleSurah(n)}
+                                />
+                              );
+                            })}
+                            {canPick && !youHere ? (
+                              <button
+                                type="button"
+                                title={title}
+                                aria-label={`Select ${title} for your tracks`}
+                                aria-pressed={emptySelected}
+                                onClick={() => toggleSurah(n)}
+                                className={`inline-flex size-8 shrink-0 items-center justify-center rounded-md text-sm font-semibold outline-none ring-2 ring-transparent transition hover:opacity-90 sm:size-9 ${selUi.focusRing} focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950 ${
+                                  emptySelected
+                                    ? selUi.cellSelectedEmpty
+                                    : "bg-zinc-100/90 text-zinc-400 ring-zinc-200/80 dark:bg-zinc-800/50 dark:text-zinc-500 dark:ring-zinc-700/60"
+                                }`}
+                              >
+                                +
+                              </button>
+                            ) : null}
+                            {here.length === 0 && !canPick ? (
+                              <span className="text-xs text-zinc-400 dark:text-zinc-600">—</span>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
                     </section>
                   );
@@ -777,27 +909,31 @@ export function SurahHeatmapPanel({
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
             </div>
 
-            <div className="text-left">
-              <p className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                <IconTrackRevising className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
-                Revising
-              </p>
-              <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
-                {myRev}
-              </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
-            </div>
+            {!personalMemorizationOnly ? (
+              <>
+                <div className="text-left">
+                  <p className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    <IconTrackRevising className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                    Revising
+                  </p>
+                  <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
+                    {myRev}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
+                </div>
 
-            <div className="text-left">
-              <p className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                <IconTrackReciting className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                Reciting
-              </p>
-              <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
-                {myRec}
-              </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
-            </div>
+                <div className="text-left">
+                  <p className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    <IconTrackReciting className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    Reciting
+                  </p>
+                  <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
+                    {myRec}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Surahs on this track</p>
+                </div>
+              </>
+            ) : null}
           </div>
         ) : (
           <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Sign in to see your stats.</p>
@@ -805,11 +941,15 @@ export function SurahHeatmapPanel({
 
         {readOnly ? (
           <p className="mt-6 text-[11px] leading-relaxed text-amber-800 dark:text-amber-400/90">
-            View only — update tracks from Circles → Chat (I am…) or Intention.
+            {personalMemorizationOnly
+              ? "Green boxes are surahs you’ve memorised (% Quran). Bordered rows are on your active memorisation track (from Chat or Intention). Update tracks there — this matrix is read-only."
+              : "View only — update tracks from Circles → Chat (I am…) or Intention."}
           </p>
         ) : null}
         <p className="mt-10 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-          Each card is a surah. Badges list members on that surah (full names); circles show memorising, revising, or reciting.
+          {personalMemorizationOnly
+            ? "Each card is a surah: memorised, memorisation in progress, or not started."
+            : "Each card is a surah. Badges list members on that surah (full names); circles show memorising, revising, or reciting."}
         </p>
       </aside>
     </div>

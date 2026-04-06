@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { IconTrackMemorising, IconTrackReciting, IconTrackRevising } from "@/app/components/track-activity-icons";
 
 export type GoalTrackPayload = {
@@ -138,7 +139,7 @@ function GoalTrackCard({
   progressAnchorYmd,
   icon,
   onEdit,
-  onCompleted,
+  onRequestComplete,
   busy,
   error,
 }: {
@@ -150,7 +151,8 @@ function GoalTrackCard({
   progressAnchorYmd?: string;
   icon: ReactNode;
   onEdit?: () => void;
-  onCompleted: () => void;
+  /** Opens confirmation — actual completion runs after user confirms. */
+  onRequestComplete: () => void;
   busy: boolean;
   error: string | null;
 }) {
@@ -190,7 +192,7 @@ function GoalTrackCard({
           <button
             type="button"
             disabled={busy}
-            onClick={onCompleted}
+            onClick={onRequestComplete}
             className={iconBtnClass}
             aria-label="Mark as complete"
           >
@@ -356,6 +358,126 @@ function GoalTrackEmptyCard({
   );
 }
 
+function completeTrackConfirmCopy(track: GoalTrackKey): { title: string; body: string } {
+  switch (track) {
+    case "memorizing":
+      return {
+        title: "Complete memorisation intention?",
+        body: "This marks your current memorisation goal as done. Those surahs will show as memorised on Progress and the Surah matrix.",
+      };
+    case "revising":
+      return {
+        title: "Complete revision intention?",
+        body: "This marks your revision goal as done for this cycle.",
+      };
+    case "reciting":
+      return {
+        title: "Complete recitation intention?",
+        body: "This marks your recitation goal as done for this cycle.",
+      };
+  }
+}
+
+function CompleteTrackConfirmModal({
+  track,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  track: GoalTrackKey;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { title, body } = completeTrackConfirmCopy(track);
+  const titleId = `complete-intention-title-${track}`;
+  const descId = `complete-intention-desc-${track}`;
+  const node = (
+    <div className="fixed inset-0 z-[260] flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="Close dialog"
+        disabled={busy}
+        className="absolute inset-0 bg-black/50"
+        onClick={() => {
+          if (!busy) onCancel();
+        }}
+      />
+      <div
+        role="alertdialog"
+        aria-modal
+        aria-labelledby={titleId}
+        aria-describedby={descId}
+        className="relative z-10 w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-600 dark:bg-zinc-900 sm:p-6"
+      >
+        <h2 id={titleId} className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+          {title}
+        </h2>
+        <p id={descId} className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+          {body}
+        </p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+            className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+          >
+            {busy ? "Saving…" : "Confirm"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+  if (typeof document === "undefined") return null;
+  return createPortal(node, document.body);
+}
+
+function CongratulationToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  const [visible, setVisible] = useState(false);
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setVisible(true));
+    const leave = window.setTimeout(() => setVisible(false), 3000);
+    const done = window.setTimeout(() => dismissRef.current(), 3330);
+    return () => {
+      cancelAnimationFrame(id);
+      window.clearTimeout(leave);
+      window.clearTimeout(done);
+    };
+  }, [message]);
+
+  const node = (
+    <div
+      className="pointer-events-none fixed inset-x-0 top-0 z-[270] flex justify-center px-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))]"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className={`pointer-events-auto max-w-md rounded-2xl border border-emerald-200/90 bg-emerald-50 px-5 py-3 text-center shadow-lg transition-[transform,opacity] duration-300 ease-out dark:border-emerald-800/80 dark:bg-emerald-950/95 ${
+          visible ? "translate-y-0 opacity-100" : "-translate-y-[140%] opacity-0"
+        }`}
+      >
+        <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">{message}</p>
+        <p className="mt-0.5 text-xs text-emerald-800/90 dark:text-emerald-200/90">Alhamdulillah</p>
+      </div>
+    </div>
+  );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(node, document.body);
+}
+
 function GoalsStatusLog({ entries }: { entries: StatusLogEntry[] }) {
   return (
     <section className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800" aria-labelledby="goals-timeline-heading">
@@ -419,9 +541,11 @@ export function MyGoalsPanel({
 }) {
   const [busyTrack, setBusyTrack] = useState<GoalTrackKey | null>(null);
   const [errTrack, setErrTrack] = useState<Partial<Record<GoalTrackKey, string>>>({});
+  const [confirmCompleteTrack, setConfirmCompleteTrack] = useState<GoalTrackKey | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const completeTrack = useCallback(
-    async (track: GoalTrackKey) => {
+    async (track: GoalTrackKey): Promise<boolean> => {
       setBusyTrack(track);
       setErrTrack((e) => {
         const n = { ...e };
@@ -437,7 +561,7 @@ export function MyGoalsPanel({
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) {
           setErrTrack((e) => ({ ...e, [track]: data.error ?? "Could not save." }));
-          return;
+          return false;
         }
         setErrTrack((e) => {
           const n = { ...e };
@@ -445,12 +569,23 @@ export function MyGoalsPanel({
           return n;
         });
         onGoalsUpdated?.();
+        return true;
       } finally {
         setBusyTrack(null);
       }
     },
     [onGoalsUpdated]
   );
+
+  async function onConfirmComplete() {
+    if (!confirmCompleteTrack) return;
+    const track = confirmCompleteTrack;
+    const ok = await completeTrack(track);
+    if (ok) {
+      setConfirmCompleteTrack(null);
+      setToastMessage("Alhamdulillah!");
+    }
+  }
 
   const mem = goals?.memorizing;
   const rev = goals?.revising;
@@ -477,7 +612,7 @@ export function MyGoalsPanel({
         onEdit={onSetIntentionForTrack ? () => openTrack("memorizing") : undefined}
         busy={busyTrack === "memorizing"}
         error={errTrack.memorizing || null}
-        onCompleted={() => void completeTrack("memorizing")}
+        onRequestComplete={() => setConfirmCompleteTrack("memorizing")}
       />
     );
   } else {
@@ -508,7 +643,7 @@ export function MyGoalsPanel({
         onEdit={onSetIntentionForTrack ? () => openTrack("revising") : undefined}
         busy={busyTrack === "revising"}
         error={errTrack.revising || null}
-        onCompleted={() => void completeTrack("revising")}
+        onRequestComplete={() => setConfirmCompleteTrack("revising")}
       />
     );
   } else {
@@ -544,7 +679,7 @@ export function MyGoalsPanel({
         onEdit={onSetIntentionForTrack ? () => openTrack("reciting") : undefined}
         busy={busyTrack === "reciting"}
         error={errTrack.reciting || null}
-        onCompleted={() => void completeTrack("reciting")}
+        onRequestComplete={() => setConfirmCompleteTrack("reciting")}
       />
     );
   } else {
@@ -567,6 +702,17 @@ export function MyGoalsPanel({
         {sections}
         <GoalsStatusLog entries={statusLog} />
       </div>
+      {confirmCompleteTrack ? (
+        <CompleteTrackConfirmModal
+          track={confirmCompleteTrack}
+          busy={busyTrack === confirmCompleteTrack}
+          onCancel={() => setConfirmCompleteTrack(null)}
+          onConfirm={() => void onConfirmComplete()}
+        />
+      ) : null}
+      {toastMessage ? (
+        <CongratulationToast message={toastMessage} onDismiss={() => setToastMessage(null)} />
+      ) : null}
     </div>
   );
 }
