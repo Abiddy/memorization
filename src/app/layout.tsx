@@ -18,9 +18,9 @@ export const metadata: Metadata = {
   description:
     "Personal Quran memorisation tracker: intentions, progress, stats, and optional circles with friends.",
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: [{ url: "/app-icon.png", type: "image/png", sizes: "512x512" }],
+    shortcut: "/app-icon.png",
+    apple: "/app-icon.png",
   },
 };
 

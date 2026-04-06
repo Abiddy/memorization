@@ -42,7 +42,7 @@ export function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex w-full max-w-sm flex-col gap-4">
-      <label className="flex flex-col gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+      <label className="flex flex-col gap-2 text-sm font-medium text-zinc-300">
         Username
         <input
           type="text"
@@ -55,7 +55,7 @@ export function LoginForm() {
           className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-base text-zinc-900 outline-none ring-emerald-600/20 transition-[box-shadow,border-color] placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-4 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-emerald-500"
         />
       </label>
-      <label className="flex flex-col gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+      <label className="flex flex-col gap-2 text-sm font-medium text-zinc-300">
         Password
         <input
           type="password"
@@ -69,7 +69,7 @@ export function LoginForm() {
         />
       </label>
       {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+        <p className="text-sm text-red-400" role="alert">
           {error}
         </p>
       ) : null}
@@ -80,7 +80,7 @@ export function LoginForm() {
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>
-      <p className="text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+      <p className="text-center text-xs leading-relaxed text-zinc-500">
         New here? Pick a username and password to create your account. Returning? Use the same credentials to
         sign in.
       </p>

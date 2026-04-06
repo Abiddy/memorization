@@ -240,12 +240,12 @@ function ClubBrandTitle() {
   return (
     <div className="flex items-center gap-2">
       <Image
-        src="/icon.svg"
+        src="/app-icon.png"
         alt=""
-        width={14}
-        height={14}
-        sizes="16px"
-        className="h-[16px] w-[16px] shrink-0 object-contain"
+        width={40}
+        height={40}
+        sizes="24px"
+        className="h-6 w-6 shrink-0 rounded-md object-contain sm:h-7 sm:w-7"
         priority
         aria-hidden
       />
